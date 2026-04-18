@@ -330,6 +330,9 @@ class TagController extends AbstractController
                     $data = ['error' => 'InvalidTagList'];
                     $status = 404;
                 } else {
+                    // Initialize tag IDs array
+                    $tag_ids = [];
+
                     // Loop through tags and get/create them
                     foreach ($tag_list as $tag_name) {
                         // Check for non-empty tag name and skip if empty
@@ -393,7 +396,7 @@ class TagController extends AbstractController
             // Get the video
             $video = $this->video_collection->get($video_id);
 
-            // Validate it's an video
+            // Validate it's a video
             if (!($video instanceof Video)) {
                 $data = ['error' => 'VideoDoesNotExist'];
                 $status = 404;
@@ -403,6 +406,9 @@ class TagController extends AbstractController
                     $data = ['error' => 'InvalidTagList'];
                     $status = 404;
                 } else {
+                    // Initialize tag IDs array
+                    $tag_ids = [];
+
                     // Loop through tags and get/create them
                     foreach ($tag_list as $tag_name) {
                         // Check for non-empty tag name and skip if empty
@@ -417,7 +423,7 @@ class TagController extends AbstractController
                         $tag_ids[] = $tag->getTagId();
                     }
 
-                    // Add the tags to the image tags
+                    // Add the tags to the video tags
                     $tags_added = $this->tag_collection->addTagsToVideo($video, $tag_ids);
 
                     // If tag not added, set error
@@ -505,7 +511,7 @@ class TagController extends AbstractController
     }
 
     /**
-     * fromTagFromVideo function
+     * removeTagFromVideo function
      * This function is used to remove a tag from a specific video.
      *
      * @param Request $request
@@ -513,7 +519,7 @@ class TagController extends AbstractController
      * @param array $args
      * @return Response
      */
-    public function fromTagFromVideo(Request $request, Response $response, array $args): Response
+    public function removeTagFromVideo(Request $request, Response $response, array $args): Response
     {
         // Initialize Required Variables
         $params = $request->getParsedBody();
