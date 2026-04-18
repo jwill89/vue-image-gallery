@@ -175,7 +175,7 @@ class PageController extends AbstractController
         }
 
         // Get total videos
-        $total_videos = $this->video_collection->totalVideosWithTags($tag_list);
+        $total_videos = $this->video_collection->totalVideosWithTags($tag_ids);
         $total_pages = (int)ceil($total_videos / $items_per_page);
 
         // Set the return data
