@@ -19,8 +19,8 @@
 
 .tags-page-img {
     max-width: fit-content;
-    filter: drop-shadow 3px 3px 5px black;
-    transition: drop-shadow .3s ease-in-out 0s;
+    filter: drop-shadow(3px 3px 5px black);
+    transition: filter .3s ease-in-out 0s;
 }
 
 .sticky-footer {
