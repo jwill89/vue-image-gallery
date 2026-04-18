@@ -31,8 +31,8 @@ $app->setBasePath("/api");
 $app->addBodyParsingMiddleware();
 $app->addRoutingMiddleware();
 
-// Setup Error Middleware
-$error_middleware = $app->addErrorMiddleware(true, true, true);
+// Setup Error Middleware (disable detailed errors in production)
+$error_middleware = $app->addErrorMiddleware(false, true, true);
 
 // Setup Allowables and Response Origins
 $app->add(function (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface {
