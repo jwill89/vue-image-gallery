@@ -14,8 +14,6 @@ use Gallery\Structure\Video;
  * TagStorage Class
  *
  * This class is responsible for managing tag storage in the database.
- * It provides methods to retrieve, create, update, and delete tags,
- * as well as associate tags with images and videos.
  */
 class TagStorage
 {
@@ -31,6 +29,9 @@ class TagStorage
     // Database Connection
     private PDO $db;
 
+    // Cached category collection
+    private ?TagCategoryCollection $categoryCollection = null;
+
     /**
      * Class constructor
      * Initializes the Database Connection.
@@ -43,51 +44,46 @@ class TagStorage
     }
 
     /**
-     * Retrieves a tag or an array of tag from the database.
+     * Get or create the cached TagCategoryCollection instance.
+     */
+    private function getCategoryCollection(): TagCategoryCollection
+    {
+        if ($this->categoryCollection === null) {
+            $this->categoryCollection = new TagCategoryCollection();
+        }
+        return $this->categoryCollection;
+    }
+
+    /**
+     * Retrieves a tag or an array of tags from the database.
      *
      * @param integer|null $tag_id Optional. The ID of the tag to retrieve. If null, retrieves all tags.
      *
-     * @return Tag|Tag[] An array of Tag objects or a single Tag object if an ID is provided.
+     * @return Tag|Tag[]|null A Tag object, null if not found, or an array of Tag objects.
      */
-    public function retrieve(?int $tag_id = null): Tag|array
+    public function retrieve(?int $tag_id = null): Tag|array|null
     {
-        // Initialize Tags
-        $tags = [];
-
-        // Check for Tag ID for where clause
         $where = ($tag_id !== null) ? " WHERE tag_id = :tag_id" : "";
-
-        // Setup the Query
         $sql = "SELECT * FROM " . self::MAIN_TABLE . "$where ORDER BY tag_name ASC";
 
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
 
-        // If prepared successfully
-        if ($stmt) {
-            // If we have an image id, bind it
-            if ($tag_id !== null) {
-                $stmt->bindParam(':tag_id', $tag_id, PDO::PARAM_INT);
-            }
+        if ($tag_id !== null) {
+            $stmt->bindParam(':tag_id', $tag_id, PDO::PARAM_INT);
+        }
 
-            // Try executing
-            if ($stmt->execute()) {
-                $tags = $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
+        $stmt->execute();
+        $tags = $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
 
-                // If we only have 1 image, then we got an ID
-                if ($tag_id !== null && count($tags) === 1) {
-                    return $tags[0];
-                }
-            }
-
-            $stmt->closeCursor();
+        if ($tag_id !== null) {
+            return count($tags) === 1 ? $tags[0] : null;
         }
 
         return $tags;
     }
 
     /**
-     * Retrieves a tag from the database based on tag name or returns null if it doesn't exist
+     * Retrieves a tag from the database based on tag name or returns null if it doesn't exist.
      *
      * @param string $tag_name The name of the tag to retrieve.
      *
@@ -95,38 +91,14 @@ class TagStorage
      */
     public function retrieveByName(string $tag_name): ?Tag
     {
-        // Initialize Tags
-        $tag = null;
-
-        // Setup the Query
         $sql = "SELECT * FROM " . self::MAIN_TABLE . " WHERE tag_name = :tag_name";
-
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':tag_name', $tag_name, PDO::PARAM_STR);
+        $stmt->execute();
+        $stmt->setFetchMode(PDO::FETCH_CLASS, self::OBJ_CLASS);
+        $tag = $stmt->fetch();
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind tag name
-            $stmt->bindValue(':tag_name', $tag_name, PDO::PARAM_STR);
-
-            // Try executing
-            if ($stmt->execute()) {
-                // Set fetch mode
-                $stmt->setFetchMode(PDO::FETCH_CLASS, self::OBJ_CLASS);
-
-                // Get the tag, if it exists
-                $tag = $stmt->fetch();
-
-                // If failure, reset
-                if (!($tag instanceof Tag)) {
-                    $tag = null;
-                }
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $tag;
+        return $tag instanceof Tag ? $tag : null;
     }
 
     /**
@@ -143,12 +115,8 @@ class TagStorage
 
         // First, split the tag name to see if a category shortcode was used.
         if (str_contains($tag_name, ':')) {
-            // Split the tag name into category shortcode and actual tag name
             [$category_shortcode, $name] = array_map('trim', explode(':', $tag_name, 2));
-
-            // Get a category repository and check for a valid category shortcode
-            $category_repo = new TagCategoryCollection();
-            $category = $category_repo->getByShortcode($category_shortcode);
+            $category = $this->getCategoryCollection()->getByShortcode($category_shortcode);
         } else {
             $category = null;
         }
@@ -156,30 +124,22 @@ class TagStorage
         // Check if we have a tag using the name based on if the category shortcode was valid
         $tag_exists = ($category instanceof TagCategory) ? $this->retrieveByName($name) : $this->retrieveByName($tag_name);
 
-        // If we got a tag, return the tag
         if ($tag_exists instanceof Tag) {
             return $tag_exists;
         }
 
-        // If we failed to get a tag, create one and save it.
+        // Create a new tag
         $tag = new Tag();
 
-        // If we had a valid category shortcode, set the category ID and name
         if ($category instanceof TagCategory) {
-            $tag->setTagName($name)
-                ->setCategoryId($category->getCategoryId());
+            $tag->setTagName($name)->setCategoryId($category->getCategoryId());
         } else {
-            $tag->setTagName($tag_name)
-                ->setCategoryId(1);
+            $tag->setTagName($tag_name)->setCategoryId(1);
         }
 
-        // Save the tag
         $tag_id = $this->store($tag);
-
-        // Set the tag ID
         $tag->setTagId($tag_id);
 
-        // Return the new tag
         return $tag;
     }
 
@@ -192,35 +152,18 @@ class TagStorage
      */
     public function retrieveTagsForImage(Image $image): array
     {
-        // Initialize Tags
-        $tags = [];
-
-        // Setup the Query
         $sql = "SELECT tt.* FROM " . self::MAIN_TABLE . " tt
-                    LEFT JOIN " . self::IMAGE_TAG_TABLE .  " it USING (tag_id)
+                    LEFT JOIN " . self::IMAGE_TAG_TABLE . " it USING (tag_id)
                     WHERE it.image_id = :image_id 
                     ORDER BY CASE WHEN tt.category_id = 1 THEN 10
                                   ELSE tt.category_id END,
                             tt.tag_name ASC";
 
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':image_id', $image->getImageId(), PDO::PARAM_INT);
+        $stmt->execute();
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind image id
-            $stmt->bindValue(':image_id', $image->getImageId(), PDO::PARAM_INT);
-
-            // Try executing
-            if ($stmt->execute()) {
-                // Fetch results
-                $tags = $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $tags;
+        return $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
     }
 
     /**
@@ -232,35 +175,18 @@ class TagStorage
      */
     public function retrieveTagsForVideo(Video $video): array
     {
-        // Initialize Tags
-        $tags = [];
-
-        // Setup the Query
         $sql = "SELECT tt.* FROM " . self::MAIN_TABLE . " tt
-                    LEFT JOIN " . self::VIDEO_TAG_TABLE .  " vt USING (tag_id)
+                    LEFT JOIN " . self::VIDEO_TAG_TABLE . " vt USING (tag_id)
                     WHERE vt.video_id = :video_id
                     ORDER BY CASE WHEN tt.category_id = 1 THEN 10
                                   ELSE tt.category_id END,
                             tt.tag_name ASC";
 
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':video_id', $video->getVideoId(), PDO::PARAM_INT);
+        $stmt->execute();
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind video id
-            $stmt->bindValue(':video_id', $video->getVideoId(), PDO::PARAM_INT);
-
-            // Try executing
-            if ($stmt->execute()) {
-                // Fetch results
-                $tags = $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $tags;
+        return $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
     }
 
     /**
@@ -270,10 +196,6 @@ class TagStorage
      */
     public function retrieveAllTagsForPage(): array
     {
-        // Initialize Tag Data
-        $tag_data = [];
-
-        // Setup the Query using JOINs instead of correlated subqueries for performance
         $sql = "SELECT t.tag_id, t.tag_name, t.category_id, tc.category_name,
                 COALESCE(ic.image_count, 0) AS image_count,
                 COALESCE(vc.video_count, 0) AS video_count
@@ -283,25 +205,14 @@ class TagStorage
              LEFT JOIN (SELECT tag_id, COUNT(*) AS video_count FROM " . self::VIDEO_TAG_TABLE . " GROUP BY tag_id) vc ON vc.tag_id = t.tag_id
              ORDER BY t.category_id ASC, t.tag_name ASC";
 
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->execute();
 
-        // If prepared successfully
-        if ($stmt) {
-            // Try executing
-            if ($stmt->execute()) {
-                // Fetch results
-                $tag_data = $stmt->fetchAll(PDO::FETCH_ASSOC);
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $tag_data;
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
     }
 
     /**
-     * Add tags to an image.
+     * Add tags to an image. Uses INSERT OR IGNORE to skip duplicates.
      *
      * @param Image $image Image object to which tags will be added.
      * @param array $tag_ids Array of tag IDs to be added to the image.
@@ -310,40 +221,21 @@ class TagStorage
      */
     public function addTagsToImage(Image $image, array $tag_ids): bool
     {
-        // Setup the Query
-        $sql = "INSERT INTO " . self::IMAGE_TAG_TABLE . " (image_id, tag_id) VALUES (:image_id, :tag_id)";
-
-        // Prepare statement
+        $sql = "INSERT OR IGNORE INTO " . self::IMAGE_TAG_TABLE . " (image_id, tag_id) VALUES (:image_id, :tag_id)";
         $stmt = $this->db->prepare($sql);
+        $image_id = $image->getImageId();
 
-        // If prepared successfully
-        if ($stmt) {
-            // Prepare ID and Parameters for Execute
-            $image_id = $image->getImageId();
-            $params = [];
-
-            foreach ($tag_ids as $tag_id) {
-                $params[] = [
-                    ':image_id' => $image_id,
-                    ':tag_id' => $tag_id
-                ];
+        foreach ($tag_ids as $tag_id) {
+            if (!$stmt->execute([':image_id' => $image_id, ':tag_id' => $tag_id])) {
+                return false;
             }
-
-            // Try executing
-            foreach ($params as $param) {
-                if (!$stmt->execute($param)) {
-                    return false;
-                }
-            }
-
-            $stmt->closeCursor();
         }
 
         return true;
     }
 
     /**
-     * Add tags to a video.
+     * Add tags to a video. Uses INSERT OR IGNORE to skip duplicates.
      *
      * @param Video $video Video object to which tags will be added.
      * @param array $tag_ids Array of tag IDs to be added to the video.
@@ -352,33 +244,14 @@ class TagStorage
      */
     public function addTagsToVideo(Video $video, array $tag_ids): bool
     {
-        // Setup the Query
-        $sql = "INSERT INTO " . self::VIDEO_TAG_TABLE . " (video_id, tag_id) VALUES (:video_id, :tag_id)";
-
-        // Prepare statement
+        $sql = "INSERT OR IGNORE INTO " . self::VIDEO_TAG_TABLE . " (video_id, tag_id) VALUES (:video_id, :tag_id)";
         $stmt = $this->db->prepare($sql);
+        $video_id = $video->getVideoId();
 
-        // If prepared successfully
-        if ($stmt) {
-            // Prepare ID and Parameters for Execute
-            $video_id = $video->getVideoId();
-            $params = [];
-
-            foreach ($tag_ids as $tag_id) {
-                $params[] = [
-                    ':video_id' => $video_id,
-                    ':tag_id' => $tag_id
-                ];
+        foreach ($tag_ids as $tag_id) {
+            if (!$stmt->execute([':video_id' => $video_id, ':tag_id' => $tag_id])) {
+                return false;
             }
-
-            // Try executing
-            foreach ($params as $param) {
-                if (!$stmt->execute($param)) {
-                    return false;
-                }
-            }
-
-            $stmt->closeCursor();
         }
 
         return true;
@@ -394,31 +267,16 @@ class TagStorage
      */
     public function removeTagFromImage(Image $image, Tag $tag): bool
     {
-        // Setup the Query
         $sql = "DELETE FROM " . self::IMAGE_TAG_TABLE . " WHERE image_id = :image_id AND tag_id = :tag_id";
-
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':image_id', $image->getImageId(), PDO::PARAM_INT);
+        $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind data
-            $stmt->bindValue(':image_id', $image->getImageId(), PDO::PARAM_INT);
-            $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
-
-            // Try executing
-            if ($stmt->execute()) {
-                return true;
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return false;
+        return $stmt->execute();
     }
 
     /**
-     * Removes a tag from a video
+     * Removes a tag from a video.
      *
      * @param Video $video The video from which the tag will be removed.
      * @param Tag $tag The tag to be removed.
@@ -427,27 +285,12 @@ class TagStorage
      */
     public function removeTagFromVideo(Video $video, Tag $tag): bool
     {
-        // Setup the Query
         $sql = "DELETE FROM " . self::VIDEO_TAG_TABLE . " WHERE video_id = :video_id AND tag_id = :tag_id";
-
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':video_id', $video->getVideoId(), PDO::PARAM_INT);
+        $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind data
-            $stmt->bindValue(':video_id', $video->getVideoId(), PDO::PARAM_INT);
-            $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
-
-            // Try executing
-            if ($stmt->execute()) {
-                return true;
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return false;
+        return $stmt->execute();
     }
 
     /**
@@ -457,26 +300,11 @@ class TagStorage
      */
     public function retrieveTotalTagCount(): int
     {
-        // Initialize Total Count
-        $total = 0;
-
-        // Setup the Query
-        $sql = "SELECT COUNT(*) AS total_tags FROM " . self::MAIN_TABLE;
-
-        // Prepare statement
+        $sql = "SELECT COUNT(*) FROM " . self::MAIN_TABLE;
         $stmt = $this->db->prepare($sql);
+        $stmt->execute();
 
-        // If prepared successfully
-        if ($stmt) {
-            // Try executing
-            if ($stmt->execute()) {
-                $total = (int)$stmt->fetchColumn();
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $total;
+        return (int)$stmt->fetchColumn();
     }
 
     /**
@@ -488,28 +316,12 @@ class TagStorage
      */
     public function tagExists(string $tag_name): bool
     {
-        // Initialize In Database
-        $in_database = false;
-
-        // Define First Query
         $sql = "SELECT 1 FROM " . self::MAIN_TABLE . " WHERE tag_name = :tag_name LIMIT 1";
-
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindParam(':tag_name', $tag_name, PDO::PARAM_STR);
+        $stmt->execute();
 
-        // If statement prepared successfully
-        if ($stmt) {
-            // Bind parameters
-            $stmt->bindParam(':tag_name', $tag_name, PDO::PARAM_STR);
-
-            // Try executing
-            if ($stmt->execute()) {
-                // Fetch the result
-                $in_database = (int)$stmt->fetchColumn() === 1;
-            }
-        }
-
-        return $in_database;
+        return (int)$stmt->fetchColumn() === 1;
     }
 
     /**
@@ -521,33 +333,22 @@ class TagStorage
      */
     public function store(Tag $tag): int
     {
-        // Check if already exists
         if (empty($tag->getTagId())) {
             $sql = "INSERT INTO " . self::MAIN_TABLE . " (category_id, tag_name) VALUES (:category_id, :tag_name)";
         } else {
-            $sql = "UPDATE " . self::MAIN_TABLE . " SET category_id = :category_id, tag_name = :tag_name
-                                                        WHERE tag_id = :tag_id";
+            $sql = "UPDATE " . self::MAIN_TABLE . " SET category_id = :category_id, tag_name = :tag_name WHERE tag_id = :tag_id";
         }
 
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':category_id', $tag->getCategoryId(), PDO::PARAM_INT);
+        $stmt->bindValue(':tag_name', $tag->getTagName(), PDO::PARAM_STR);
 
-        // If the statement was prepared successfully
-        if ($stmt) {
-            // Bind parameters
-            $stmt->bindValue(':category_id', $tag->getCategoryId(), PDO::PARAM_INT);
-            $stmt->bindValue(':tag_name', $tag->getTagName(), PDO::PARAM_STR);
+        if (!empty($tag->getTagId())) {
+            $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
+        }
 
-            // Bind ID if editing
-            if (!empty($tag->getTagId())) {
-                $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
-            }
-
-            // Execute statement
-            if ($stmt->execute()) {
-                // Get the last inserted ID
-                $tag->setTagId((int)$this->db->lastInsertId());
-            }
+        if ($stmt->execute() && empty($tag->getTagId())) {
+            $tag->setTagId((int)$this->db->lastInsertId());
         }
 
         return $tag->getTagId();
@@ -562,28 +363,10 @@ class TagStorage
      */
     public function delete(Tag $tag): bool
     {
-        // Initialize Success
-        $success = false;
-
-        // Setup the Query
         $sql = "DELETE FROM " . self::MAIN_TABLE . " WHERE tag_id = :tag_id";
-
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind the image ID to the query
-            $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
-
-            // Try executing
-            if ($stmt->execute()) {
-                $success = true;
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $success;
+        return $stmt->execute();
     }
 }

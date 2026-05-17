@@ -30,21 +30,14 @@ class TagCollection
 
     /**
      * get function
-     * Gets an tag based on supplied tag ID.
+     * Gets a tag based on supplied tag ID.
      *
      * @param int $tag_id
      * @return Tag|null
      */
     public function get(int $tag_id): ?Tag
     {
-        $tag = $this->storage->retrieve($tag_id);
-
-        //If we got an array, then there wasn't a valid tag, return null
-        if (is_array($tag) && empty($tag)) {
-            return null;
-        }
-
-        return $tag;
+        return $this->storage->retrieve($tag_id);
     }
 
     /**
@@ -133,7 +126,7 @@ class TagCollection
      * Adds the supplied tag to the supplied image.
      *
      * @param Image $image
-     * @param Tag $tag
+     * @param array $tag_ids
      * @return bool
      */
     public function addTagsToImage(Image $image, array $tag_ids): bool
@@ -146,7 +139,7 @@ class TagCollection
      * Adds the supplied tag to the supplied video.
      *
      * @param Video $video
-     * @param Tag $tag
+     * @param array $tag_ids
      * @return bool
      */
     public function addTagsToVideo(Video $video, array $tag_ids): bool
@@ -210,6 +203,6 @@ class TagCollection
             throw new OutOfBoundsException('Tag not found in database.');
         }
 
-        return $success;
+        return true;
     }
 }

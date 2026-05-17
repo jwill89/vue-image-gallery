@@ -34,14 +34,7 @@ class TagCategoryCollection
      */
     public function get(int $category_id): ?TagCategory
     {
-        $category = $this->storage->retrieve($category_id);
-
-        //If we got an array, then there wasn't a valid tag, return null
-        if (is_array($category) && empty($category)) {
-            return null;
-        }
-
-        return $category;
+        return $this->storage->retrieve($category_id);
     }
 
     /**

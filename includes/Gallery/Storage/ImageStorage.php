@@ -40,40 +40,24 @@ class ImageStorage
      *
      * @param int|null $image_id Optional. The ID of the image to retrieve. If null, retrieves all images.
      *
-     * @return Image|Image[] An Image object if $image_id is provided, otherwise an array of Image objects.
+     * @return Image|Image[]|null An Image object if $image_id is provided, null if not found, otherwise an array of Image objects.
      */
-    public function retrieve(?int $image_id = null): Image|array
+    public function retrieve(?int $image_id = null): Image|array|null
     {
-        // Initialize Images
-        $images = [];
-
-        // Check for Image ID for where clause
         $where = ($image_id !== null) ? " WHERE image_id = :image_id" : "";
-
-        // Setup the Query
         $sql = "SELECT * FROM " . self::MAIN_TABLE . "$where ORDER BY image_id DESC";
 
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
 
-        // If prepared successfully
-        if ($stmt) {
-            // If we have an image id, bind it
-            if ($image_id !== null) {
-                $stmt->bindParam(':image_id', $image_id, PDO::PARAM_INT);
-            }
+        if ($image_id !== null) {
+            $stmt->bindParam(':image_id', $image_id, PDO::PARAM_INT);
+        }
 
-            // Try executing
-            if ($stmt->execute()) {
-                $images = $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
+        $stmt->execute();
+        $images = $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
 
-                // If we only have 1 image, then we got an ID
-                if ($image_id !== null && count($images) === 1) {
-                    return $images[0];
-                }
-            }
-
-            $stmt->closeCursor();
+        if ($image_id !== null) {
+            return count($images) === 1 ? $images[0] : null;
         }
 
         return $images;
@@ -88,33 +72,14 @@ class ImageStorage
      */
     public function retrieveByFilename(string $file_name): ?Image
     {
-        // Initialize Image
-        $image = null;
-
-        // Setup the Query
         $sql = "SELECT * FROM " . self::MAIN_TABLE . " WHERE file_name = :file_name";
-
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindParam(':file_name', $file_name, PDO::PARAM_STR);
+        $stmt->execute();
+        $stmt->setFetchMode(PDO::FETCH_CLASS, self::OBJ_CLASS);
+        $image = $stmt->fetch();
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind file name
-            $stmt->bindParam(':file_name', $file_name, PDO::PARAM_STR);
-
-            // Try executing
-            if ($stmt->execute()) {
-                // Set Fetch Mode
-                $stmt->setFetchMode(PDO::FETCH_CLASS, self::OBJ_CLASS);
-
-                // Fetch result
-                $image = $stmt->fetch();
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $image;
+        return $image instanceof Image ? $image : null;
     }
 
     /**
@@ -128,49 +93,30 @@ class ImageStorage
      */
     public function retrieveWithTags(array $tag_ids, int $page_number, int $items_per_page): array
     {
-        // Initialize Images
-        $images = [];
-
-        // Count the number of tags
         $tag_count = count($tag_ids);
-
-        // Calculate the offset for pagination
         $offset = ($page_number - 1) * $items_per_page;
 
-        // Setup the Query with parameterized placeholders for tag IDs
         $placeholders = implode(',', array_fill(0, $tag_count, '?'));
         $sql = "SELECT img.* FROM " . self::MAIN_TABLE . " img
-                    LEFT JOIN " . self::TAGS_TABLE . " tag
-                    USING (image_id)
+                    LEFT JOIN " . self::TAGS_TABLE . " tag USING (image_id)
                     WHERE tag.tag_id IN ($placeholders)
                     GROUP BY img.image_id 
                     HAVING COUNT(DISTINCT tag.tag_id) = ?
                     ORDER BY img.image_id DESC
                     LIMIT ? OFFSET ?";
 
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind the parameters to the query
-            $bind_index = 1;
-            foreach ($tag_ids as $tid) {
-                $stmt->bindValue($bind_index++, (int)$tid, PDO::PARAM_INT);
-            }
-            $stmt->bindValue($bind_index++, $tag_count, PDO::PARAM_INT);
-            $stmt->bindValue($bind_index++, $items_per_page, PDO::PARAM_INT);
-            $stmt->bindValue($bind_index, $offset, PDO::PARAM_INT);
-
-            // Try executing
-            if ($stmt->execute()) {
-                $images = $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
-            }
-
-            $stmt->closeCursor();
+        $bind_index = 1;
+        foreach ($tag_ids as $tid) {
+            $stmt->bindValue($bind_index++, (int)$tid, PDO::PARAM_INT);
         }
+        $stmt->bindValue($bind_index++, $tag_count, PDO::PARAM_INT);
+        $stmt->bindValue($bind_index++, $items_per_page, PDO::PARAM_INT);
+        $stmt->bindValue($bind_index, $offset, PDO::PARAM_INT);
 
-        return $images;
+        $stmt->execute();
+        return $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
     }
 
     /**
@@ -183,33 +129,15 @@ class ImageStorage
      */
     public function retrieveForPage(int $page_number, int $items_per_page): array
     {
-        // Initialize Images
-        $images = [];
-
-        // Calculate the offset for pagination
         $offset = ($page_number - 1) * $items_per_page;
-
-        // Setup the Query
         $sql = "SELECT * FROM " . self::MAIN_TABLE . " ORDER BY image_id DESC LIMIT :limit OFFSET :offset";
 
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':limit', $items_per_page, PDO::PARAM_INT);
+        $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
+        $stmt->execute();
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind the limit and offset parameters
-            $stmt->bindValue(':limit', $items_per_page, PDO::PARAM_INT);
-            $stmt->bindValue(':offset', $offset, PDO::PARAM_INT);
-
-            // Try executing
-            if ($stmt->execute()) {
-                $images = $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $images;
+        return $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
     }
 
     /**
@@ -219,26 +147,10 @@ class ImageStorage
      */
     public function retrieveTotalImageCount(): int
     {
-        // Initialize Total Count
-        $total = 0;
+        $sql = "SELECT COUNT(*) FROM " . self::MAIN_TABLE;
+        $stmt = $this->db->query($sql);
 
-        // Setup the Query
-        $sql = "SELECT COUNT(*) AS total_images FROM " . self::MAIN_TABLE;
-
-        // Prepare statement
-        $stmt = $this->db->prepare($sql);
-
-        // If prepared successfully
-        if ($stmt) {
-            // Try executing
-            if ($stmt->execute()) {
-                $total = (int)$stmt->fetchColumn();
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $total;
+        return (int)$stmt->fetchColumn();
     }
 
     /**
@@ -250,42 +162,24 @@ class ImageStorage
      */
     public function retrieveTotalImageWithTagsCount(array $tag_ids): int
     {
-        // Initialize Total Count
-        $total = 0;
-
-        // Count the number of tags
         $tag_count = count($tag_ids);
-
-        // Setup the Query with parameterized placeholders for tag IDs
         $placeholders = implode(',', array_fill(0, $tag_count, '?'));
-        $sql = "SELECT COUNT(*) FROM (SELECT img.* FROM " . self::MAIN_TABLE . " img
-                    LEFT JOIN " . self::TAGS_TABLE . " tag
-                    USING (image_id)
+        $sql = "SELECT COUNT(*) FROM (SELECT img.image_id FROM " . self::MAIN_TABLE . " img
+                    LEFT JOIN " . self::TAGS_TABLE . " tag USING (image_id)
                     WHERE tag.tag_id IN ($placeholders)
                     GROUP BY img.image_id 
                     HAVING COUNT(DISTINCT tag.tag_id) = ?)";
 
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind the parameters to the query
-            $bind_index = 1;
-            foreach ($tag_ids as $tid) {
-                $stmt->bindValue($bind_index++, (int)$tid, PDO::PARAM_INT);
-            }
-            $stmt->bindValue($bind_index, $tag_count, PDO::PARAM_INT);
-
-            // Try executing
-            if ($stmt->execute()) {
-                $total = (int)$stmt->fetchColumn();
-            }
-
-            $stmt->closeCursor();
+        $bind_index = 1;
+        foreach ($tag_ids as $tid) {
+            $stmt->bindValue($bind_index++, (int)$tid, PDO::PARAM_INT);
         }
+        $stmt->bindValue($bind_index, $tag_count, PDO::PARAM_INT);
 
-        return $total;
+        $stmt->execute();
+        return (int)$stmt->fetchColumn();
     }
 
     /**
@@ -298,29 +192,13 @@ class ImageStorage
      */
     public function imageExistsInDatabase(string $file_name, string $hash): bool
     {
-        // Initialize In Database
-        $in_database = false;
-
-        // Define First Query
         $sql = "SELECT 1 FROM " . self::MAIN_TABLE . " WHERE file_name = :file_name OR hash = :hash LIMIT 1";
-
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindParam(':file_name', $file_name, PDO::PARAM_STR);
+        $stmt->bindParam(':hash', $hash, PDO::PARAM_STR);
+        $stmt->execute();
 
-        // If statement prepared successfully
-        if ($stmt) {
-            // Bind parameters
-            $stmt->bindParam(':file_name', $file_name, PDO::PARAM_STR);
-            $stmt->bindParam(':hash', $hash, PDO::PARAM_STR);
-
-            // Try executing
-            if ($stmt->execute()) {
-                // Fetch the result
-                $in_database = (int)$stmt->fetchColumn() === 1;
-            }
-        }
-
-        return $in_database;
+        return (int)$stmt->fetchColumn() === 1;
     }
 
     /**
@@ -332,25 +210,16 @@ class ImageStorage
      */
     public function store(Image $image): int
     {
-        // Check if already exists
         if (empty($image->getImageId())) {
             $sql = "INSERT INTO " . self::MAIN_TABLE . " (file_name, file_time, hash, bits_fingerprint) VALUES (:file_name, :file_time, :hash, :bits_fingerprint)";
-
-            // Prepare statement
             $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':file_name', $image->getFileName(), PDO::PARAM_STR);
+            $stmt->bindValue(':file_time', $image->getFileTime(), PDO::PARAM_INT);
+            $stmt->bindValue(':hash', $image->getHash(), PDO::PARAM_STR);
+            $stmt->bindValue(':bits_fingerprint', $image->getBitsFingerprint(), PDO::PARAM_STR);
 
-            // Bind parameters
-            if ($stmt) {
-                $stmt->bindValue(':file_name', $image->getFileName(), PDO::PARAM_STR);
-                $stmt->bindValue(':file_time', $image->getFileTime(), PDO::PARAM_INT);
-                $stmt->bindValue(':hash', $image->getHash(), PDO::PARAM_STR);
-                $stmt->bindValue(':bits_fingerprint', $image->getBitsFingerprint(), PDO::PARAM_STR);
-
-                // Execute statement
-                if ($stmt->execute()) {
-                    // Get the last inserted ID
-                    $image->setImageId((int)$this->db->lastInsertId());
-                }
+            if ($stmt->execute()) {
+                $image->setImageId((int)$this->db->lastInsertId());
             }
         }
 
@@ -366,28 +235,10 @@ class ImageStorage
      */
     public function delete(Image $image): bool
     {
-        // Initialize Success
-        $success = false;
-
-        // Setup the Query
         $sql = "DELETE FROM " . self::MAIN_TABLE . " WHERE image_id = :image_id";
-
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':image_id', $image->getImageId(), PDO::PARAM_INT);
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind the image ID to the query
-            $stmt->bindValue(':image_id', $image->getImageId(), PDO::PARAM_INT);
-
-            // Try executing
-            if ($stmt->execute()) {
-                $success = true;
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $success;
+        return $stmt->execute();
     }
 }

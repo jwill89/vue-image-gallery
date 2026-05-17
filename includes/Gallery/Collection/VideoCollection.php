@@ -43,9 +43,9 @@ class VideoCollection
      *
      * @param int $video_id The ID of the video to retrieve.
      *
-     * @return Video The Video object corresponding to the supplied ID.
+     * @return Video|null The Video object corresponding to the supplied ID, or null if not found.
      */
-    public function get(int $video_id): Video
+    public function get(int $video_id): ?Video
     {
         return $this->storage->retrieve($video_id);
     }
@@ -121,6 +121,7 @@ class VideoCollection
      * @param Video $video The Video object to save.
      *
      * @return int The ID of the newly saved video.
+     * @throws ImagickException
      */
     public function save(Video $video): int
     {
@@ -223,6 +224,7 @@ class VideoCollection
      * Resizes a thumbnail if created via FFMpeg
      *
      * @param string $thumbnail_path The path to the thumbnail image.
+     * @throws ImagickException
      */
     public function resizeThumbnail(string $thumbnail_path): void
     {
@@ -281,6 +283,6 @@ class VideoCollection
             throw new OutOfBoundsException('Image not found in database.');
         }
 
-        return $success;
+        return true;
     }
 }

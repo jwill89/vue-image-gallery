@@ -6,7 +6,6 @@ use Psr\Container\ContainerInterface;
 use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
 use Gallery\Collection\TagCollection;
-use Gallery\Collection\TagCategoryCollection;
 use Gallery\Collection\ImageCollection;
 use Gallery\Collection\VideoCollection;
 use Gallery\Structure\Image;
@@ -26,595 +25,276 @@ class TagController extends AbstractController
     private const array VALID_CATEGORY_IDS = [1, 2, 3, 4, 5];
 
     private TagCollection $tag_collection;
-    private TagCategoryCollection $tag_category_collection;
     private ImageCollection $image_collection;
     private VideoCollection $video_collection;
 
-    /**
-     * TagController constructor
-     * This function is used to initialize the TagController class.
-     * It sets up the tag collection for use in the class methods.
-     *
-     * @param ContainerInterface $container
-     */
     public function __construct(ContainerInterface $container)
     {
-        // Parent Constructor
         parent::__construct($container);
-
-        // Set collections for user in class methods
         $this->tag_collection = new TagCollection();
-        $this->tag_category_collection = new TagCategoryCollection();
         $this->image_collection = new ImageCollection();
         $this->video_collection = new VideoCollection();
     }
 
-    /**
-     * getTag function
-     * This function is used to get a tag or a collection of tags.
-     *
-     * @param Request $request
-     * @param Response $response
-     * @param array $args
-     * @return Response
-     */
     public function getTag(Request $request, Response $response, array $args): Response
     {
-        // Initialize Tag ID if provided
         $tag_id = $this->parseParameters($args, 'tag_id', null);
 
-        // Assume status OK
-        $status = 200;
-
-        // Default Data
-        $data = [];
-
-        // If invalid ID provided, return error
-        if (!empty($tag_id) && (!is_numeric($tag_id) || $tag_id <= 0)) {
-            $data = ['error' => 'InvalidTagID'];
-            $status = 404;
-        // If no tag ID provided, get all tags
-        } elseif ($tag_id === null) {
-            $data = ['error' => 'NoTagIDProvided'];
-            $status = 400;
-        // If tag ID provided, get the tag
-        } elseif (!empty($tag_id) && $tag_id > 0) {
-            $data = $this->tag_collection->get($tag_id);
+        if ($tag_id === null) {
+            return $response->withJson(['error' => 'NoTagIDProvided'], 400);
         }
 
-        // Return data as json with HTTP status response
-        return $response->withJson($data, $status);
+        if (!is_numeric($tag_id) || $tag_id <= 0) {
+            return $response->withJson(['error' => 'InvalidTagID'], 404);
+        }
+
+        $data = $this->tag_collection->get((int)$tag_id);
+        return $response->withJson($data, 200);
     }
 
-    /**
-     * getAllTags function
-     * This function is used to get all tags
-     *
-     * @param Request $request
-     * @param Response $response
-     * @param array $args
-     * @return Response
-     */
     public function getAllTags(Request $request, Response $response, array $args): Response
     {
-        // Assume status OK
-        $status = 200;
-
-        // Default Data
-        $data = [];
-
-        // Get all tags
-        $data = $this->tag_collection->getAll();
-
-        // Return data as JSON with HTTP status response
-        return $response->withJson($data, $status);
+        return $response->withJson($this->tag_collection->getAll(), 200);
     }
 
-    /**
-     * getTagListForDisplay function
-     * This function is used to get all tags, along with their category and usage counts
-     * on images and videos for the tag list page table.
-     *
-     * @param Request $request
-     * @param Response $response
-     * @param array $args
-     * @return Response
-     */
     public function getTagListForDisplay(Request $request, Response $response, array $args): Response
     {
-        // Assume status OK
-        $status = 200;
-
-        // Default Data
-        $data = [];
-
-        // Get all tags
-        $data = $this->tag_collection->getAllForPage();
-
-        // Return data as json with HTTP status response
-        return $response->withJson($data, $status);
+        return $response->withJson($this->tag_collection->getAllForPage(), 200);
     }
 
     public function addTag(Request $request, Response $response, array $args): Response
     {
-        // Initialize Required Variables
         $params = $request->getParsedBody();
         $tag_name = $this->sanitizeTagName($this->parseParameters($params, 'tag_name', ''));
         $tag_category = (int)$this->parseParameters($params, 'category_id', 1);
 
-        // Assume OK status
-        $status = 200;
-
-        // Initialize Data
-        $data = true;
-
-        // Validate tag name
         if (empty($tag_name)) {
-            $data = ['error' => 'InvalidTagName'];
-            $status = 400;
-        } elseif (mb_strlen($tag_name) > self::MAX_TAG_NAME_LENGTH) {
-            $data = ['error' => 'TagNameTooLong'];
-            $status = 400;
-        } elseif (!in_array($tag_category, self::VALID_CATEGORY_IDS, true)) {
-            $data = ['error' => 'InvalidCategoryID'];
-            $status = 400;
-        } elseif ($this->tag_collection->getByName($tag_name) instanceof Tag) {
-            $data = ['error' => 'TagAlreadyExists'];
-            $status = 400;
-        } else {
-            // Create the tag
-            $tag = new Tag();
-            $tag->setTagName($tag_name)
-                ->setCategoryId($tag_category);
-
-            // Save the tag
-            $tag_id = $this->tag_collection->save($tag);
-
-            // Check to ensure tag was created
-            if ($tag_id === 0) {
-                $data = ['error' => 'CouldNotCreateTag'];
-                $status = 500;
-            }
+            return $response->withJson(['error' => 'InvalidTagName'], 400);
+        }
+        if (mb_strlen($tag_name) > self::MAX_TAG_NAME_LENGTH) {
+            return $response->withJson(['error' => 'TagNameTooLong'], 400);
+        }
+        if (!in_array($tag_category, self::VALID_CATEGORY_IDS, true)) {
+            return $response->withJson(['error' => 'InvalidCategoryID'], 400);
+        }
+        if ($this->tag_collection->getByName($tag_name) instanceof Tag) {
+            return $response->withJson(['error' => 'TagAlreadyExists'], 400);
         }
 
-        // Return data as json with HTTP status response
-        return $response->withJson($data, $status);
+        $tag = new Tag();
+        $tag->setTagName($tag_name)->setCategoryId($tag_category);
+        $tag_id = $this->tag_collection->save($tag);
+
+        if ($tag_id === 0) {
+            $this->logger->error('Failed to create tag', ['tag_name' => $tag_name]);
+            return $response->withJson(['error' => 'CouldNotCreateTag'], 500);
+        }
+
+        $this->logger->info('Tag created', ['tag_id' => $tag_id, 'tag_name' => $tag_name, 'category_id' => $tag_category]);
+        return $response->withJson(true, 200);
     }
 
     public function editTag(Request $request, Response $response, array $args): Response
     {
-        // Initialize Required Variables
         $params = $request->getParsedBody();
         $tag_id = (int)$this->parseParameters($args, 'tag_id', 0);
         $tag_name = $this->sanitizeTagName($this->parseParameters($params, 'tag_name', ''));
         $tag_category = (int)$this->parseParameters($params, 'category_id', 1);
 
-        // Assume OK status
-        $status = 200;
-
-        // Initialize Data
-        $data = true;
-
-        // Check for valid tag ID and name
         if ($tag_id <= 0) {
-            $data = ['error' => 'InvalidTagID'];
-            $status = 400;
-        } elseif (empty($tag_name)) {
-            $data = ['error' => 'InvalidTagName'];
-            $status = 400;
-        } elseif (mb_strlen($tag_name) > self::MAX_TAG_NAME_LENGTH) {
-            $data = ['error' => 'TagNameTooLong'];
-            $status = 400;
-        } elseif (!in_array($tag_category, self::VALID_CATEGORY_IDS, true)) {
-            $data = ['error' => 'InvalidCategoryID'];
-            $status = 400;
-        } else {
-            // Get the tag
-            $tag = $this->tag_collection->get($tag_id);
-
-            // Validate it's an tag
-            if (!($tag instanceof Tag)) {
-                $data = ['error' => 'TagDoesNotExist'];
-                $status = 404;
-            } else {
-                // Set the tag data
-                $tag->setTagName($tag_name)
-                    ->setCategoryId($tag_category);
-
-                // Save the tag
-                $saved_id = $this->tag_collection->save($tag);
-
-                // Check to ensure we saved
-                if ($saved_id !== 0) {
-                    $data = ['error' => 'CouldNotSaveTag'];
-                    $status = 500;
-                }
-            }
+            return $response->withJson(['error' => 'InvalidTagID'], 400);
+        }
+        if (empty($tag_name)) {
+            return $response->withJson(['error' => 'InvalidTagName'], 400);
+        }
+        if (mb_strlen($tag_name) > self::MAX_TAG_NAME_LENGTH) {
+            return $response->withJson(['error' => 'TagNameTooLong'], 400);
+        }
+        if (!in_array($tag_category, self::VALID_CATEGORY_IDS, true)) {
+            return $response->withJson(['error' => 'InvalidCategoryID'], 400);
         }
 
-        // Return data as json with HTTP status response
-        return $response->withJson($data, $status);
+        $tag = $this->tag_collection->get($tag_id);
+        if (!($tag instanceof Tag)) {
+            return $response->withJson(['error' => 'TagDoesNotExist'], 404);
+        }
+
+        $tag->setTagName($tag_name)->setCategoryId($tag_category);
+        $saved_id = $this->tag_collection->save($tag);
+
+        if ($saved_id === 0) {
+            $this->logger->error('Failed to save tag edit', ['tag_id' => $tag_id]);
+            return $response->withJson(['error' => 'CouldNotSaveTag'], 500);
+        }
+
+        $this->logger->info('Tag edited', ['tag_id' => $tag_id, 'tag_name' => $tag_name, 'category_id' => $tag_category]);
+        return $response->withJson(true, 200);
     }
 
-    /**
-     * getTagsForImage function
-     * This function is used to get the tags for a specific image.
-     *
-     * @param Request $request
-     * @param Response $response
-     * @param array $args
-     * @return Response
-     */
     public function getTagsForImage(Request $request, Response $response, array $args): Response
     {
-        // Initialize Image ID if provided
-        $image_id = $this->parseParameters($args, 'image_id', 0);
-
-        // Assume status OK
-        $status = 200;
-
-        // Default Data
-        $data = [];
-
-        // If invalid ID provided, return error
-        if (!empty($image_id) && (!is_numeric($image_id) || $image_id <= 0)) {
-            $data = ['error' => 'InvalidImageID'];
-            $status = 400;
-        // If image ID provided, get the tags
-        } elseif (!empty($image_id) && $image_id > 0) {
-            // Get the image
-            $image = $this->image_collection->get($image_id);
-            // Get the tags for the image
-            $data = $this->tag_collection->getTagsForImage($image);
-        }
-
-        // Return data as json with HTTP status response
-        return $response->withJson($data, $status);
+        return $this->getTagsForMedia('image', $args, $response);
     }
 
-    /**
-     * getTagsForVideo function
-     * This function is used to get the tags for a specific video.
-     *
-     * @param Request $request
-     * @param Response $response
-     * @param array $args
-     * @return Response
-     */
     public function getTagsForVideo(Request $request, Response $response, array $args): Response
     {
-        // Initialize Video ID if provided
-        $video_id = $this->parseParameters($args, 'video_id', 0);
-
-        // Assume status OK
-        $status = 200;
-
-        // Default Data
-        $data = [];
-
-        // If invalid ID provided, return error
-        if (!empty($video_id) && (!is_numeric($video_id) || $video_id <= 0)) {
-            $data = ['error' => 'InvalidVideoID'];
-            $status = 400;
-        // If video ID provided, get the tags
-        } elseif (!empty($video_id) && $video_id > 0) {
-            // Get the video
-            $video = $this->video_collection->get($video_id);
-            // Get the tags for the video
-            $data = $this->tag_collection->getTagsForVideo($video);
-        }
-
-        // Return data as json with HTTP status response
-        return $response->withJson($data, $status);
+        return $this->getTagsForMedia('video', $args, $response);
     }
 
-    /**
-     * addTagToImage function
-     * This function is used to add a tag to a specific image.
-     *
-     * @param Request $request
-     * @param Response $response
-     * @param array $args
-     * @return Response
-     */
     public function addTagsToImage(Request $request, Response $response, array $args): Response
     {
-        // Initialize Required Variables
-        $params = $request->getParsedBody();
-        $image_id = (int)$this->parseParameters($params, 'item_id', 0);
-        $tag_list = array_unique(array_map('trim', explode(',', $this->parseParameters($params, 'tag_list', ''))));
-
-        // Assume OK status
-        $status = 200;
-
-        // Return Tags for Image
-        $data = [];
-
-        // Check for valid image id
-        if ($image_id <= 0) {
-            $data = ['error' => 'InvalidImageID'];
-            $status = 400;
-        } else {
-            // Get the image
-            $image = $this->image_collection->get($image_id);
-
-            // Validate it's an image
-            if (!($image instanceof Image)) {
-                $data = ['error' => 'ImageDoesNotExist'];
-                $status = 404;
-            } else {
-                // Check for tag list
-                if (empty($tag_list)) {
-                    $data = ['error' => 'InvalidTagList'];
-                    $status = 404;
-                } else {
-                    // Initialize tag IDs array
-                    $tag_ids = [];
-
-                    // Loop through tags and get/create them
-                    foreach ($tag_list as $tag_name) {
-                        // Check for non-empty tag name and skip if empty
-                        if (empty($tag_name)) {
-                            continue;
-                        }
-
-                        // Get or Create Tag
-                        $tag = $this->tag_collection->getOrCreate($tag_name);
-
-                        // Store tag ID for collection use
-                        $tag_ids[] = $tag->getTagId();
-                    }
-
-                    // Add the tags to the image tags
-                    $tags_added = $this->tag_collection->addTagsToImage($image, $tag_ids);
-
-                    // If tag not added, set error
-                    if (!$tags_added) {
-                        $data = ['error' => 'CouldNotAddAllTagsToImage'];
-                        $status = 404;
-                    } else {
-                        // Get the tags for the image now that we updated them
-                        $data = $this->tag_collection->getTagsForImage($image);
-                    }
-                }
-            }
-        }
-
-        // Return data as json with HTTP status response
-        return $response->withJson($data, $status);
+        return $this->addTagsToMedia('image', $request, $response);
     }
 
-    /**
-     * addTagToVideo function
-     * This function is used to add a tag to a specific video.
-     *
-     * @param Request $request
-     * @param Response $response
-     * @param array $args
-     * @return Response
-     */
     public function addTagsToVideo(Request $request, Response $response, array $args): Response
     {
-        // Initialize Required Variables
-        $params = $request->getParsedBody();
-        $video_id = (int)$this->parseParameters($params, 'item_id', 0);
-        $tag_list = array_unique(array_map('trim', explode(',', $this->parseParameters($params, 'tag_list', ''))));
-
-        // Assume OK status
-        $status = 200;
-
-        // Return Tags for Video
-        $data = [];
-
-        // Check for valid video id
-        if ($video_id <= 0) {
-            $data = ['error' => 'InvalidVideoID'];
-            $status = 400;
-        } else {
-            // Get the video
-            $video = $this->video_collection->get($video_id);
-
-            // Validate it's a video
-            if (!($video instanceof Video)) {
-                $data = ['error' => 'VideoDoesNotExist'];
-                $status = 404;
-            } else {
-                // Check for tag list
-                if (empty($tag_list)) {
-                    $data = ['error' => 'InvalidTagList'];
-                    $status = 404;
-                } else {
-                    // Initialize tag IDs array
-                    $tag_ids = [];
-
-                    // Loop through tags and get/create them
-                    foreach ($tag_list as $tag_name) {
-                        // Check for non-empty tag name and skip if empty
-                        if (empty($tag_name)) {
-                            continue;
-                        }
-
-                        // Get or Create Tag
-                        $tag = $this->tag_collection->getOrCreate($tag_name);
-
-                        // Store tag ID for collection use
-                        $tag_ids[] = $tag->getTagId();
-                    }
-
-                    // Add the tags to the video tags
-                    $tags_added = $this->tag_collection->addTagsToVideo($video, $tag_ids);
-
-                    // If tag not added, set error
-                    if (!$tags_added) {
-                        $data = ['error' => 'CouldNotAddAllTagsToVideo'];
-                        $status = 404;
-                    } else {
-                        // Get the tags for the image now that we updated them
-                        $data = $this->tag_collection->getTagsForVideo($video);
-                    }
-                }
-            }
-        }
-
-        // Return data as json with HTTP status response
-        return $response->withJson($data, $status);
+        return $this->addTagsToMedia('video', $request, $response);
     }
 
-    /**
-     * removeTagFromImage function
-     * This function is used to remove a tag from a specific image.
-     *
-     * @param Request $request
-     * @param Response $response
-     * @param array $args
-     * @return Response
-     */
     public function removeTagFromImage(Request $request, Response $response, array $args): Response
     {
-        // Initialize Required Variables
-        $params = $request->getParsedBody();
-        $image_id = (int)$this->parseParameters($params, 'item_id', 0);
-        $tag_id = (int)$this->parseParameters($params, 'tag_id', 0);
-
-        // Assume OK status
-        $status = 200;
-
-        // Return Tags for Image
-        $data = [];
-
-        // Check for valid image id
-        if ($image_id <= 0) {
-            $data = ['error' => 'InvalidImageID'];
-            $status = 400;
-        } else {
-            // Get the image
-            $image = $this->image_collection->get($image_id);
-
-            // Validate it's an image
-            if (!($image instanceof Image)) {
-                $data = ['error' => 'ImageDoesNotExist'];
-                $status = 404;
-            } else {
-                // Check for valid tag name
-                if ($tag_id <= 0) {
-                    $data = ['error' => 'InvalidTagID'];
-                    $status = 404;
-                } else {
-                    // Get the tag
-                    $tag = $this->tag_collection->get($tag_id);
-
-                    // Check for valid tag.
-                    if (!($tag instanceof Tag)) {
-                        $data = ['error' => 'CouldNotFindTag'];
-                        $status = 404;
-                    } else {
-                        // Remove the tag from the image tags
-                        $tag_removed = $this->tag_collection->removeTagFromImage($image, $tag);
-
-                        // If tag not removed, set error
-                        if (!$tag_removed) {
-                            $data = ['error' => 'CouldNotRemoveTagFromImage'];
-                            $status = 404;
-                        } else {
-                            // Get the tags for the image now that we updated them
-                            $data = $this->tag_collection->getTagsForImage($image);
-                        }
-                    }
-                }
-            }
-        }
-
-        // Return data as json with HTTP status response
-        return $response->withJson($data, $status);
+        return $this->removeTagFromMedia('image', $request, $response);
     }
 
-    /**
-     * removeTagFromVideo function
-     * This function is used to remove a tag from a specific video.
-     *
-     * @param Request $request
-     * @param Response $response
-     * @param array $args
-     * @return Response
-     */
     public function removeTagFromVideo(Request $request, Response $response, array $args): Response
     {
-        // Initialize Required Variables
-        $params = $request->getParsedBody();
-        $video_id = (int)$this->parseParameters($params, 'item_id', 0);
-        $tag_id = (int)$this->parseParameters($params, 'tag_id', 0);
+        return $this->removeTagFromMedia('video', $request, $response);
+    }
 
-        // Assume OK status
-        $status = 200;
+    // ========================================================================
+    // Private helper methods
+    // ========================================================================
 
-        // Return Tags for Video
-        $data = [];
+    private function getTagsForMedia(string $type, array $args, Response $response): Response
+    {
+        $id_key = $type . '_id';
+        $media_id = $this->parseParameters($args, $id_key, 0);
 
-        // Check for valid video id
-        if ($video_id <= 0) {
-            $data = ['error' => 'InvalidVideoID'];
-            $status = 400;
-        } else {
-            // Get the image
-            $video = $this->video_collection->get($video_id);
-
-            // Validate it's an image
-            if (!($video instanceof Video)) {
-                $data = ['error' => 'VideoDoesNotExist'];
-                $status = 404;
-            } else {
-                // Check for valid tag name
-                if ($tag_id <= 0) {
-                    $data = ['error' => 'InvalidTagID'];
-                    $status = 404;
-                } else {
-                    // Get the tag
-                    $tag = $this->tag_collection->get($tag_id);
-
-                    // Check for valid tag.
-                    if (!($tag instanceof Tag)) {
-                        $data = ['error' => 'CouldNotFindTag'];
-                        $status = 404;
-                    } else {
-                        // Remove the tag from the video tags
-                        $tag_removed = $this->tag_collection->removeTagFromVideo($video, $tag);
-
-                        // If tag not removed, set error
-                        if (!$tag_removed) {
-                            $data = ['error' => 'CouldNotRemoveTagFromVideo'];
-                            $status = 404;
-                        } else {
-                            // Get the tags for the video now that we updated them
-                            $data = $this->tag_collection->getTagsForVideo($video);
-                        }
-                    }
-                }
-            }
+        if (!is_numeric($media_id) || $media_id <= 0) {
+            return $response->withJson(['error' => 'Invalid' . ucfirst($type) . 'ID'], 400);
         }
 
-        // Return data as JSON with HTTP status response
-        return $response->withJson($data, $status);
+        $media = ($type === 'image')
+            ? $this->image_collection->get((int)$media_id)
+            : $this->video_collection->get((int)$media_id);
+
+        if ($media === null) {
+            return $response->withJson(['error' => ucfirst($type) . 'DoesNotExist'], 404);
+        }
+
+        $tags = ($type === 'image')
+            ? $this->tag_collection->getTagsForImage($media)
+            : $this->tag_collection->getTagsForVideo($media);
+
+        return $response->withJson($tags, 200);
+    }
+
+    private function addTagsToMedia(string $type, Request $request, Response $response): Response
+    {
+        $params = $request->getParsedBody();
+        $media_id = (int)$this->parseParameters($params, 'item_id', 0);
+        $tag_list = array_unique(array_map('trim', explode(',', $this->parseParameters($params, 'tag_list', ''))));
+
+        if ($media_id <= 0) {
+            return $response->withJson(['error' => 'Invalid' . ucfirst($type) . 'ID'], 400);
+        }
+
+        $media = ($type === 'image')
+            ? $this->image_collection->get($media_id)
+            : $this->video_collection->get($media_id);
+
+        if ($media === null) {
+            return $response->withJson(['error' => ucfirst($type) . 'DoesNotExist'], 404);
+        }
+
+        if (empty($tag_list) || (count($tag_list) === 1 && $tag_list[0] === '')) {
+            return $response->withJson(['error' => 'InvalidTagList'], 400);
+        }
+
+        // Get or create tags and collect IDs
+        $tag_ids = [];
+        foreach ($tag_list as $tag_name) {
+            if (empty($tag_name)) {
+                continue;
+            }
+            $tag = $this->tag_collection->getOrCreate($tag_name);
+            $tag_ids[] = $tag->getTagId();
+        }
+
+        // Add tags
+        $success = ($type === 'image')
+            ? $this->tag_collection->addTagsToImage($media, $tag_ids)
+            : $this->tag_collection->addTagsToVideo($media, $tag_ids);
+
+        if (!$success) {
+            $this->logger->error("Failed to add tags to $type", ['media_id' => $media_id, 'tag_ids' => $tag_ids]);
+            return $response->withJson(['error' => 'CouldNotAddAllTagsTo' . ucfirst($type)], 500);
+        }
+
+        $this->logger->info("Tags added to $type", ['media_id' => $media_id, 'tag_ids' => $tag_ids]);
+
+        // Return updated tags
+        $data = ($type === 'image')
+            ? $this->tag_collection->getTagsForImage($media)
+            : $this->tag_collection->getTagsForVideo($media);
+
+        return $response->withJson($data, 200);
+    }
+
+    private function removeTagFromMedia(string $type, Request $request, Response $response): Response
+    {
+        $params = $request->getParsedBody();
+        $media_id = (int)$this->parseParameters($params, 'item_id', 0);
+        $tag_id = (int)$this->parseParameters($params, 'tag_id', 0);
+
+        if ($media_id <= 0) {
+            return $response->withJson(['error' => 'Invalid' . ucfirst($type) . 'ID'], 400);
+        }
+
+        $media = ($type === 'image')
+            ? $this->image_collection->get($media_id)
+            : $this->video_collection->get($media_id);
+
+        if ($media === null) {
+            return $response->withJson(['error' => ucfirst($type) . 'DoesNotExist'], 404);
+        }
+
+        if ($tag_id <= 0) {
+            return $response->withJson(['error' => 'InvalidTagID'], 400);
+        }
+
+        $tag = $this->tag_collection->get($tag_id);
+        if (!($tag instanceof Tag)) {
+            return $response->withJson(['error' => 'CouldNotFindTag'], 404);
+        }
+
+        $removed = ($type === 'image')
+            ? $this->tag_collection->removeTagFromImage($media, $tag)
+            : $this->tag_collection->removeTagFromVideo($media, $tag);
+
+        if (!$removed) {
+            $this->logger->error("Failed to remove tag from $type", ['media_id' => $media_id, 'tag_id' => $tag_id]);
+            return $response->withJson(['error' => 'CouldNotRemoveTagFrom' . ucfirst($type)], 500);
+        }
+
+        $this->logger->info("Tag removed from $type", ['media_id' => $media_id, 'tag_id' => $tag_id]);
+
+        // Return updated tags
+        $data = ($type === 'image')
+            ? $this->tag_collection->getTagsForImage($media)
+            : $this->tag_collection->getTagsForVideo($media);
+
+        return $response->withJson($data, 200);
     }
 
     /**
-     * sanitizeTagName function
      * Trims, lowercases, and strips dangerous characters from a tag name.
-     *
-     * @param string $tag_name The raw tag name input.
-     * @return string The sanitized tag name.
      */
     private function sanitizeTagName(string $tag_name): string
     {
-        // Trim whitespace
         $tag_name = trim($tag_name);
-
-        // Convert to lowercase
         $tag_name = mb_strtolower($tag_name, 'UTF-8');
-
-        // Strip HTML/PHP tags
         $tag_name = strip_tags($tag_name);
-
-        // Remove control characters but allow normal Unicode
         $tag_name = preg_replace('/[\x00-\x1F\x7F]/u', '', $tag_name);
 
         return $tag_name;

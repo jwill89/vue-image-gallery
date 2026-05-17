@@ -42,9 +42,9 @@ class ImageCollection
      *
      * @param int $image_id The ID of the image to retrieve.
      *
-     * @return Image The Image object corresponding to the supplied ID.
+     * @return Image|null The Image object corresponding to the supplied ID, or null if not found.
      */
-    public function get(int $image_id): Image
+    public function get(int $image_id): ?Image
     {
         return $this->storage->retrieve($image_id);
     }
@@ -147,7 +147,7 @@ class ImageCollection
         // Set compression level (1 lowest quality, 100 highest quality)
         $image->setImageCompressionQuality(75);
 
-        // Strip out unneeded meta data
+        // Strip out unneeded metadata
         $image->stripImage();
 
         // Start Thumbnail Write
@@ -189,6 +189,7 @@ class ImageCollection
      * @param Image $image The image object to save.
      *
      * @return int The ID of the newly saved image.
+     * @throws ImagickException
      */
     public function save(Image $image): int
     {
@@ -242,6 +243,6 @@ class ImageCollection
             throw new OutOfBoundsException('Image not found in database.');
         }
 
-        return $success;
+        return true;
     }
 }

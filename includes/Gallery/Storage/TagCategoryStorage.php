@@ -39,47 +39,31 @@ class TagCategoryStorage
      *
      * @param integer|null $category_id The ID of the category to retrieve. If null, retrieves all categories.
      *
-     * @return TagCategory|TagCategory[] An array of TagCategory objects or a single TagCategory object if an ID is provided.
+     * @return TagCategory|TagCategory[]|null A TagCategory, null if not found, or an array of TagCategory objects.
      */
-    public function retrieve(?int $category_id = null): TagCategory|array
+    public function retrieve(?int $category_id = null): TagCategory|array|null
     {
-        // Initialize Categories
-        $categories = [];
-
-        // Check for Category ID for where clause
         $where = ($category_id !== null) ? " WHERE category_id = :category_id" : "";
-
-        // Setup the Query
         $sql = "SELECT * FROM " . self::MAIN_TABLE . "$where ORDER BY category_name ASC";
 
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
 
-        // If prepared successfully
-        if ($stmt) {
-            // If we have a category id, bind it
-            if ($category_id !== null) {
-                $stmt->bindParam(':category_id', $category_id, PDO::PARAM_INT);
-            }
+        if ($category_id !== null) {
+            $stmt->bindParam(':category_id', $category_id, PDO::PARAM_INT);
+        }
 
-            // Try executing
-            if ($stmt->execute()) {
-                $categories = $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
+        $stmt->execute();
+        $categories = $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
 
-                // If we only have 1 category, then we got an ID
-                if ($category_id !== null && count($categories) === 1) {
-                    return $categories[0];
-                }
-            }
-
-            $stmt->closeCursor();
+        if ($category_id !== null) {
+            return count($categories) === 1 ? $categories[0] : null;
         }
 
         return $categories;
     }
 
     /**
-     * Retrieves a tag category from the database based on short or returns null if it doesn't exist
+     * Retrieves a tag category from the database based on shortcode or returns null if it doesn't exist.
      *
      * @param string $short The shortcode of the tag category to retrieve.
      *
@@ -87,38 +71,14 @@ class TagCategoryStorage
      */
     public function retrieveByShortcode(string $short): ?TagCategory
     {
-        // Initialize Category
-        $category = null;
-
-        // Setup the Query
         $sql = "SELECT * FROM " . self::MAIN_TABLE . " WHERE category_short = :category_short";
-
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':category_short', $short, PDO::PARAM_STR);
+        $stmt->execute();
+        $stmt->setFetchMode(PDO::FETCH_CLASS, self::OBJ_CLASS);
+        $category = $stmt->fetch();
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind category shortcode
-            $stmt->bindValue(':category_short', $short, PDO::PARAM_STR);
-
-            // Try executing
-            if ($stmt->execute()) {
-                // Set fetch mode
-                $stmt->setFetchMode(PDO::FETCH_CLASS, self::OBJ_CLASS);
-
-                // Get the category, if it exists
-                $category = $stmt->fetch();
-
-                // If failure, reset
-                if (!($category instanceof TagCategory)) {
-                    $category = null;
-                }
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $category;
+        return $category instanceof TagCategory ? $category : null;
     }
 
     /**
@@ -130,30 +90,16 @@ class TagCategoryStorage
      */
     public function retrieveTagsForCategory(TagCategory $category): array
     {
-        // Initialize Tags
-        $tags = [];
+        $sql = "SELECT t.* FROM " . self::TAGS_TABLE . " t
+                LEFT JOIN " . self::MAIN_TABLE . " tc USING (category_id)
+                WHERE tc.category_id = :category_id
+                ORDER BY t.tag_name ASC";
 
-        // Setup the Query
-        $sql = "SELECT t.* FROM " . self::TAGS_TABLE . " t LEFT JOIN " . self::MAIN_TABLE .  " tc USING (category_id) WHERE tc.category_id = :category_id ORDER BY t.tag_name ASC";
-
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':category_id', $category->getCategoryId(), PDO::PARAM_INT);
+        $stmt->execute();
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind category id
-            $stmt->bindValue(':category_id', $category->getCategoryId(), PDO::PARAM_INT);
-
-            // Try executing
-            if ($stmt->execute()) {
-                // Fetch results
-                $tags = $stmt->fetchAll(PDO::FETCH_CLASS, Tag::class);
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $tags;
+        return $stmt->fetchAll(PDO::FETCH_CLASS, Tag::class);
     }
 
     /**
@@ -165,23 +111,14 @@ class TagCategoryStorage
      */
     public function store(TagCategory $category): int
     {
-        // Check if already exists
         if (empty($category->getCategoryId())) {
-            $sql = "INSERT INTO " . self::MAIN_TABLE . " (category_name, category_short) VALUES (:category_name, category_short)";
-
-            // Prepare statement
+            $sql = "INSERT INTO " . self::MAIN_TABLE . " (category_name, category_short) VALUES (:category_name, :category_short)";
             $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':category_name', $category->getCategoryName(), PDO::PARAM_STR);
+            $stmt->bindValue(':category_short', $category->getCategoryShort(), PDO::PARAM_STR);
 
-            // Bind parameters
-            if ($stmt) {
-                $stmt->bindValue(':category_name', $category->getCategoryName(), PDO::PARAM_STR);
-                $stmt->bindValue(':category_short', $category->getCategoryShort(), PDO::PARAM_STR);
-
-                // Execute statement
-                if ($stmt->execute()) {
-                    // Get the last inserted ID
-                    $category->setCategoryId((int)$this->db->lastInsertId());
-                }
+            if ($stmt->execute()) {
+                $category->setCategoryId((int)$this->db->lastInsertId());
             }
         }
 
@@ -197,28 +134,10 @@ class TagCategoryStorage
      */
     public function delete(TagCategory $category): bool
     {
-        // Initialize Success
-        $success = false;
-
-        // Setup the Query
         $sql = "DELETE FROM " . self::MAIN_TABLE . " WHERE category_id = :category_id";
-
-        // Prepare statement
         $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':category_id', $category->getCategoryId(), PDO::PARAM_INT);
 
-        // If prepared successfully
-        if ($stmt) {
-            // Bind the ID to the query
-            $stmt->bindValue(':category_id', $category->getCategoryId(), PDO::PARAM_INT);
-
-            // Try executing
-            if ($stmt->execute()) {
-                $success = true;
-            }
-
-            $stmt->closeCursor();
-        }
-
-        return $success;
+        return $stmt->execute();
     }
 }

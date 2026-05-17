@@ -26,6 +26,7 @@ class DuplicatesController extends AbstractController
 
     /**
      * getLatestReport - Returns the latest duplicates report JSON.
+     * @throws \JsonException
      */
     public function getLatestReport(Request $request, Response $response, array $args): Response
     {
@@ -49,7 +50,7 @@ class DuplicatesController extends AbstractController
         // Read the latest file
         $latest_file = $files[0];
         $content = file_get_contents($latest_file);
-        $data = json_decode($content, true);
+        $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
 
         if ($data === null) {
             return $response->withJson(['error' => 'InvalidReport', 'message' => 'Could not parse report file.'], 500);
@@ -67,8 +68,8 @@ class DuplicatesController extends AbstractController
                     $img1 = $this->image_collection->get($id1);
                     $img2 = $this->image_collection->get($id2);
 
-                    // Skip if either image no longer exists in DB (get() returns array when not found)
-                    if (!($img1 instanceof \Gallery\Structure\Image) || !($img2 instanceof \Gallery\Structure\Image)) {
+                    // Skip if either image no longer exists in DB
+                    if ($img1 === null || $img2 === null) {
                         continue;
                     }
 
@@ -108,14 +109,15 @@ class DuplicatesController extends AbstractController
      */
     public function runScan(Request $request, Response $response, array $args): Response
     {
-        $dupes_script = realpath(__DIR__ . '/../../../dupes.php');
+        $this->logger->info('Duplicate scan initiated');
+        $dupes_script = dirname(__DIR__, 3) . '/dupes.php';
 
         if (!$dupes_script || !file_exists($dupes_script)) {
             return $response->withJson(['error' => 'ScriptNotFound', 'message' => 'dupes.php not found.'], 500);
         }
 
         // Execute the script in the project root directory
-        $project_root = realpath(__DIR__ . '/../../../');
+        $project_root = dirname(__DIR__, 3) . '/';
         $command = sprintf('cd %s && php dupes.php 2>&1', escapeshellarg($project_root));
 
         $output = [];
@@ -150,6 +152,8 @@ class DuplicatesController extends AbstractController
             return $response->withJson(['error' => 'InvalidInput', 'message' => 'Provide an array of image_ids.'], 400);
         }
 
+        $this->logger->info('Delete images requested', ['image_ids' => $image_ids]);
+
         $deleted = [];
         $failed = [];
 
@@ -162,7 +166,7 @@ class DuplicatesController extends AbstractController
 
             try {
                 $image = $this->image_collection->get($id);
-                if (($image instanceof \Gallery\Structure\Image) && $this->image_collection->delete($image)) {
+                if ($image !== null && $this->image_collection->delete($image)) {
                     $deleted[] = $id;
                 } else {
                     $failed[] = $id;
