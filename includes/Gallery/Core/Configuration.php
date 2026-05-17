@@ -8,8 +8,13 @@ namespace Gallery\Core;
  */
 class Configuration
 {
-    public const string GALLERY_TITLE = 'Gallery';
     public const int DEFAULT_PER_PAGE = 40;
+
+    /**
+     * Password for protected endpoints (duplicates page).
+     * Change this to a secure value in production.
+     */
+    public const string ADMIN_PASSWORD = 'changeme';
 
     /**
      * Allowed CORS origins. Add your production domain here.
