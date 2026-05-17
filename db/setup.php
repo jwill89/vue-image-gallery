@@ -15,7 +15,7 @@ $db = DatabaseConnection::getInstance();
 
 echo <<<HTML
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
 <title>Gallery - Create Database Structure</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
