@@ -1,64 +1,42 @@
 <?php
 
+// CLI-only guard
+if (PHP_SAPI !== 'cli') {
+    http_response_code(403);
+    echo 'This script can only be run from the command line.';
+    exit(1);
+}
+
 // Required Autoloader
 require_once('../vendor/autoload.php');
 
 use Gallery\Core\DatabaseConnection;
 
-// No DB Error
-$db_exists = false;
-$db_writeable = false;
-
 // Create Database Connection
-// NOTE: If the db file does not exist, it should be created automatically by the PDO SQLite driver.
 $db = DatabaseConnection::getInstance();
 
-echo <<<HTML
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<title>Gallery - Create Database Structure</title>
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/default.min.css">
-<script type="text/javascript" src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-<script>hljs.initHighlightingOnLoad();</script>
-<style>
-    .db-success {
-        color:rgb(59, 117, 0);
-        font-weight: bold;
-    }
-    .db-error {
-        color:rgb(104, 0, 0);
-        font-weight: bold;
-    }
-</style>
-</head>
-<body>
-    <h1>Gallery - Database Creation Setup</h1>
-    <p>This script will create the database structure for the Gallery application.</p>
-    <p><strong>Note</strong>: You do not need to create the file manually, the script will create the DB file automatically with proper permissions.</p>
-    <h3>Connecting to Database</h3>
-HTML;
+echo "Gallery - Database Creation Setup\n";
+echo "==================================\n\n";
 
 // Check if DB Exists and is Writable
 $db_exists = file_exists('gallery.db');
 $db_writeable = is_writable('gallery.db');
 
 if (!$db_exists) {
-    echo "<p class='db-error'>Database file does not exist. Please create the <code>gallery.db</code> database file.</p>";
-} elseif (!$db_writeable) {
-    echo "<p class='db-error'>Database file is not writable. Please check the permissions of the <code>gallery.db</code> database file.</p>";
-} else {
-    echo <<<HTML
-        <p class='db-success'>Database file exists and is writable.</p>
-        <h3>Creating Table 'images'</h3>
-    HTML;
+    echo "[ERROR] Database file does not exist. Please create the gallery.db database file.\n";
+    exit(1);
+}
 
-    // **********************************************
-    // * Table Structure for primary table 'images' *
-    // **********************************************
+if (!$db_writeable) {
+    echo "[ERROR] Database file is not writable. Please check the permissions.\n";
+    exit(1);
+}
 
-    // Setup the SQL for the table creation
-    $sql = <<<SQL
+echo "[OK] Database file exists and is writable.\n\n";
+
+// Table definitions
+$tables = [
+    'images' => <<<SQL
     CREATE TABLE IF NOT EXISTS "images" (
         "image_id"	INTEGER NOT NULL UNIQUE,
         "file_name"	TEXT NOT NULL UNIQUE,
@@ -67,93 +45,18 @@ if (!$db_exists) {
         "bits_fingerprint"	TEXT NOT NULL,
         PRIMARY KEY("image_id" AUTOINCREMENT)
     )
-    SQL;
+    SQL,
 
-    // Execute SQL
-    $success = $db->exec($sql);
-
-    echo <<<HTML
-        <pre><code class="language-sql">$sql</code></pre>    
-    HTML;
-
-    if ($success !== false) {
-        echo "<p class='db-success'>Table 'images' created successfully.</p>";
-    } else {
-        echo "<p class='db-error'>Error creating table 'images'. SQLite Code: " . $db->errorInfo()[1] . ", " . $db->errorInfo()[0] . " - " . $db->errorInfo()[2] . "</p>";
-    }
-
-    echo <<<HTML
-        <h3>Creating Table 'tag_categories'</h3>
-    HTML;
-
-    // ******************************************************
-    // * Table Structure for primary table 'tag_categories' *
-    // ******************************************************
-
-    // Setup the SQL for the table creation
-    $sql = <<<SQL
+    'tag_categories' => <<<SQL
     CREATE TABLE IF NOT EXISTS "tag_categories" (
         "category_id"	INTEGER NOT NULL,
         "category_name"	TEXT NOT NULL UNIQUE COLLATE NOCASE,
         "category_short"	TEXT NOT NULL UNIQUE COLLATE NOCASE,
         PRIMARY KEY("category_id" AUTOINCREMENT)
     )
-    SQL;
+    SQL,
 
-    // Execute SQL
-    $success = $db->exec($sql);
-
-    echo <<<HTML
-        <pre><code class="language-sql">$sql</code></pre>    
-    HTML;
-
-    if ($success !== false) {
-        echo "<p class='db-success'>Table 'tag_categories' created successfully.</p>";
-    } else {
-        echo "<p class='db-error'>Error creating table 'tag_categories'. SQLite Code: " . $db->errorInfo()[1] . ", " . $db->errorInfo()[0] . " - " . $db->errorInfo()[2] . "</p>";
-    }
-
-    echo <<<HTML
-        <h3>Adding Table Data for Table 'tag_categories'</h3>
-    HTML;
-
-    // *************************************************
-    // * Table Data for primary table 'tag_categories' *
-    // *************************************************
-
-    // Setup the SQL for the table creation
-    $sql = <<<SQL
-    INSERT INTO "tag_categories" ("category_id", "category_name", "category_short") 
-        VALUES (1, 'General', 'g'),
-               (2, 'Artist', 'a'),
-               (3, 'Character', 'c'),
-               (4, 'Source', 's'),
-               (5, 'Personal List', 'p')
-    SQL;
-
-    // Execute SQL
-    $success = $db->exec($sql);
-
-    echo <<<HTML
-        <pre><code class="language-sql">$sql</code></pre>    
-    HTML;
-
-    if ($success !== false) {
-        echo "<p class='db-success'>Table 'tag_categories' created successfully.</p>";
-    } else {
-        echo "<p class='db-error'>Error creating table 'tag_categories'. SQLite Code: " . $db->errorInfo()[1] . ", " . $db->errorInfo()[0] . " - " . $db->errorInfo()[2] . "</p>";
-    }
-
-    echo <<<HTML
-        <h3>Creating Table 'tags'</h3>
-    HTML;
-
-    // ********************************************
-    // * Table Structure for primary table 'tags' *
-    // ********************************************
-
-    // Setup the SQL for the table creation
-    $sql = <<<SQL
+    'tags' => <<<SQL
     CREATE TABLE IF NOT EXISTS "tags" (
         "tag_id"	INTEGER NOT NULL UNIQUE,
         "category_id"	INTEGER NOT NULL DEFAULT 1,
@@ -161,31 +64,9 @@ if (!$db_exists) {
         PRIMARY KEY("tag_id" AUTOINCREMENT),
         CONSTRAINT "fk__tags__tag_categories" FOREIGN KEY("category_id") REFERENCES "tag_categories"("category_id")
     )
-    SQL;
+    SQL,
 
-    // Execute SQL
-    $success = $db->exec($sql);
-
-    echo <<<HTML
-        <pre><code class="language-sql">$sql</code></pre>    
-    HTML;
-
-    if ($success !== false) {
-        echo "<p class='db-success'>Table 'tags' created successfully.</p>";
-    } else {
-        echo "<p class='db-error'>Error creating table 'tags'. SQLite Code: " . $db->errorInfo()[1] . ", " . $db->errorInfo()[0] . " - " . $db->errorInfo()[2] . "</p>";
-    }
-
-    echo <<<HTML
-        <h3>Creating Table 'videos'</h3>
-    HTML;
-
-    // **********************************************
-    // * Table Structure for primary table 'videos' *
-    // **********************************************
-
-    // Setup the SQL for the table creation
-    $sql = <<<SQL
+    'videos' => <<<SQL
     CREATE TABLE IF NOT EXISTS "videos" (
         "video_id"	INTEGER NOT NULL UNIQUE,
         "file_name"	TEXT NOT NULL UNIQUE,
@@ -193,31 +74,9 @@ if (!$db_exists) {
         "hash"	TEXT NOT NULL,
         PRIMARY KEY("video_id" AUTOINCREMENT)
     )
-    SQL;
+    SQL,
 
-    // Execute SQL
-    $success = $db->exec($sql);
-
-    echo <<<HTML
-        <pre><code class="language-sql">$sql</code></pre>    
-    HTML;
-
-    if ($success !== false) {
-        echo "<p class='db-success'>Table 'videos' created successfully.</p>";
-    } else {
-        echo "<p class='db-error'>Error creating table 'videos'. SQLite Code: " . $db->errorInfo()[1] . ", " . $db->errorInfo()[0] . " - " . $db->errorInfo()[2] . "</p>";
-    }
-
-    echo <<<HTML
-        <h3>Creating Table 'image_tags'</h3>
-    HTML;
-
-    // *****************************************************
-    // * Table Structure for relational table 'image_tags' *
-    // *****************************************************
-
-    // Setup the SQL for the table creation
-    $sql = <<<SQL
+    'image_tags' => <<<SQL
     CREATE TABLE IF NOT EXISTS "image_tags" (
         "image_id"	INTEGER NOT NULL,
         "tag_id"	INTEGER NOT NULL,
@@ -225,56 +84,69 @@ if (!$db_exists) {
         CONSTRAINT "FK__image_tags__images" FOREIGN KEY("image_id") REFERENCES "images"("image_id") ON DELETE CASCADE ON UPDATE CASCADE,
         CONSTRAINT "FK__image_tags__tags" FOREIGN KEY("tag_id") REFERENCES "tags"("tag_id") ON DELETE CASCADE ON UPDATE CASCADE
     )
-    SQL;
+    SQL,
 
-    // Execute SQL
-    $success = $db->exec($sql);
-
-    echo <<<HTML
-        <pre><code class="language-sql">$sql</code></pre>    
-    HTML;
-
-    if ($success !== false) {
-        echo "<p class='db-success'>Table 'image_tags' created successfully.</p>";
-    } else {
-        echo "<p class='db-error'>Error creating table 'image_tags'. SQLite Code: " . $db->errorInfo()[1] . ", " . $db->errorInfo()[0] . " - " . $db->errorInfo()[2] . "</p>";
-    }
-
-    echo <<<HTML
-        <h3>Creating Table 'video_tags'</h3>
-    HTML;
-
-    // *****************************************************
-    // * Table Structure for relational table 'video_tags' *
-    // *****************************************************
-
-    // Setup the SQL for the table creation
-    $sql = <<<SQL
+    'video_tags' => <<<SQL
     CREATE TABLE IF NOT EXISTS "video_tags" (
         "video_id"	INTEGER NOT NULL,
         "tag_id"	INTEGER NOT NULL,
         CONSTRAINT "PRIMARY" PRIMARY KEY("video_id","tag_id"),
         CONSTRAINT "FK__video_tags__videos" FOREIGN KEY("video_id") REFERENCES "videos"("video_id") ON DELETE CASCADE ON UPDATE CASCADE,
         CONSTRAINT "FK__video_tags__tags" FOREIGN KEY("tag_id") REFERENCES "tags"("tag_id") ON DELETE CASCADE ON UPDATE CASCADE
-        
     )
-    SQL;
+    SQL,
 
-    // Execute SQL
+    'rate_limits' => <<<SQL
+    CREATE TABLE IF NOT EXISTS "rate_limits" (
+        "ip" TEXT NOT NULL,
+        "requested_at" INTEGER NOT NULL
+    )
+    SQL,
+
+    'auth_tokens' => <<<SQL
+    CREATE TABLE IF NOT EXISTS "auth_tokens" (
+        "token" TEXT NOT NULL PRIMARY KEY,
+        "created_at" INTEGER NOT NULL
+    )
+    SQL,
+];
+
+// Create tables
+foreach ($tables as $name => $sql) {
+    echo "Creating table '$name'... ";
     $success = $db->exec($sql);
-
-    echo <<<HTML
-        <pre><code class="language-sql">$sql</code></pre>    
-    HTML;
-
     if ($success !== false) {
-        echo "<p class='db-success'>Table 'video_tags' created successfully.</p>";
+        echo "[OK]\n";
     } else {
-        echo "<p class='db-error'>Error creating table 'video_tags'. SQLite Code: " . $db->errorInfo()[1] . ", " . $db->errorInfo()[0] . " - " . $db->errorInfo()[2] . "</p>";
+        echo "[ERROR] " . $db->errorInfo()[2] . "\n";
     }
 }
 
-echo <<<HTML
-</body>
-</html>
-HTML;
+// Insert default tag categories
+echo "\nInserting default tag categories... ";
+$sql = <<<SQL
+INSERT OR IGNORE INTO "tag_categories" ("category_id", "category_name", "category_short") 
+    VALUES (1, 'General', 'g'),
+           (2, 'Artist', 'a'),
+           (3, 'Character', 'c'),
+           (4, 'Source', 's'),
+           (5, 'Personal List', 'p')
+SQL;
+$success = $db->exec($sql);
+echo ($success !== false) ? "[OK]\n" : "[ERROR] " . $db->errorInfo()[2] . "\n";
+
+// Create indexes
+echo "\nCreating indexes...\n";
+$indexes = [
+    'idx_images_hash' => 'CREATE INDEX IF NOT EXISTS idx_images_hash ON images(hash)',
+    'idx_videos_hash' => 'CREATE INDEX IF NOT EXISTS idx_videos_hash ON videos(hash)',
+    'idx_rate_limits_ip_time' => 'CREATE INDEX IF NOT EXISTS idx_rate_limits_ip_time ON rate_limits(ip, requested_at)',
+];
+
+foreach ($indexes as $name => $sql) {
+    echo "  Index '$name'... ";
+    $success = $db->exec($sql);
+    echo ($success !== false) ? "[OK]\n" : "[ERROR] " . $db->errorInfo()[2] . "\n";
+}
+
+echo "\nSetup complete.\n";

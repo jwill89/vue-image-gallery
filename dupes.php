@@ -1,8 +1,16 @@
 <?php
 
-// Debugging
+// CLI-only guard
+if (PHP_SAPI !== 'cli') {
+    http_response_code(403);
+    echo 'This script can only be run from the command line.';
+    exit(1);
+}
+
+// Error logging (no display in production)
 error_reporting(E_ALL);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
+ini_set('log_errors', 1);
 ini_set('memory_limit', '1024M');
 
 // Autoloader
@@ -94,8 +102,8 @@ if (!empty($matches)) {
     );
 }
 
-// Output summary (visible when run in browser)
-echo "<strong>Images Compared</strong>: {$hash_count}<br/>";
-echo "<strong>Pairs Checked</strong>: " . number_format(($hash_count * ($hash_count - 1)) / 2) . "<br/>";
-echo "<strong>Duplicates Found</strong>: " . count($matches) . "<br/>";
-echo "<strong>Execution Time</strong>: {$execution_time}s<br/>";
+// Output summary (CLI plain text)
+echo "Images Compared: {$hash_count}\n";
+echo "Pairs Checked: " . number_format(($hash_count * ($hash_count - 1)) / 2) . "\n";
+echo "Duplicates Found: " . count($matches) . "\n";
+echo "Execution Time: {$execution_time}s\n";
