@@ -1,6 +1,6 @@
 <?php
 
-// Error logging (log to file, don't display)
+// Error logging
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
 ini_set('log_errors', 1);
@@ -24,158 +24,185 @@ $start_time = microtime(true);
 $image_collection = new ImageCollection();
 $video_collection = new VideoCollection();
 
-// Image Directory
+// Directory Constants
 $image_dir_full = ImageCollection::IMAGE_DIRECTORY_FULL;
 $image_dir_thumbs = ImageCollection::IMAGE_DIRECTORY_THUMBNAILS;
-
-// Video Directory
 $video_dir_full = VideoCollection::VIDEO_DIRECTORY_FULL;
 $video_dir_thumbs = VideoCollection::VIDEO_DIRECTORY_THUMBNAILS;
 
-// Get the images in the folder
-$images_in_folder = array_filter(scandir(ImageCollection::IMAGE_DIRECTORY), function ($item) {
-    return !is_dir(ImageCollection::IMAGE_DIRECTORY . $item);
-});
+// ============================================================
+// Scan Input Folders (new files waiting to be processed)
+// ============================================================
 
-// Sort images by date
-usort($images_in_folder, function ($a, $b) {
-    return filemtime(ImageCollection::IMAGE_DIRECTORY . $a) <=> filemtime(ImageCollection::IMAGE_DIRECTORY . $b);
-});
+// Get new images in the input folder (excludes directories)
+$images_in_folder = array_values(array_filter(
+    scandir(ImageCollection::IMAGE_DIRECTORY),
+    static fn($item) => !is_dir(ImageCollection::IMAGE_DIRECTORY . $item)
+));
 
-// Get the images already in the database
+// Get new videos in the input folder (excludes directories)
+$videos_in_folder = array_values(array_filter(
+    scandir(VideoCollection::VIDEO_DIRECTORY),
+    static fn($item) => !is_dir(VideoCollection::VIDEO_DIRECTORY . $item)
+));
+
+// ============================================================
+// Load Database Records & Build Lookup Maps
+// ============================================================
+
+// Get all images/videos currently in the database
 $images_in_database = $image_collection->getAll();
-
-// Get the videos in the folder
-$videos_in_folder = array_filter(scandir(VideoCollection::VIDEO_DIRECTORY), function ($item) {
-    return !is_dir(VideoCollection::VIDEO_DIRECTORY . $item);
-});
-
-// Sort videos by date
-usort($videos_in_folder, function ($a, $b) {
-    return filemtime(VideoCollection::VIDEO_DIRECTORY . $a) <=> filemtime(VideoCollection::VIDEO_DIRECTORY . $b);
-});
-
-// Get the images already in the database
 $videos_in_database = $video_collection->getAll();
 
+// Build hash maps and filename sets for O(1) lookups
+$image_hashes = [];      // MD5 hash => true
+$image_filenames = [];   // filename => true (files that exist in full/)
+
+foreach ($images_in_database as $img) {
+    $image_hashes[$img->getHash()] = true;
+    $image_filenames[$img->getFileName()] = true;
+}
+
+$video_hashes = [];
+$video_filenames = [];
+
+foreach ($videos_in_database as $vid) {
+    $video_hashes[$vid->getHash()] = true;
+    $video_filenames[$vid->getFileName()] = true;
+}
+
+// ============================================================
 // Initialize Counters
+// ============================================================
 $images_added = 0;
 $images_removed = 0;
-$images_not_added = 0;
+$images_skipped = 0;
 $videos_added = 0;
 $videos_removed = 0;
-$videos_not_added = 0;
+$videos_skipped = 0;
 
-// Initialize Hash Maps (associative arrays for O(1) lookup instead of in_array)
-$image_hashes = [];
-$video_hashes = [];
+// ============================================================
+// Remove Orphaned Database Entries
+// (DB records whose files no longer exist on disk)
+// ============================================================
 
-// Remove images from the database that do not exist in the images folder
 foreach ($images_in_database as $img) {
     if (!file_exists($image_dir_full . $img->getFileName())) {
-        // Delete from DB
         if ($image_collection->delete($img)) {
             $images_removed++;
+            // Remove from our lookup maps
+            unset($image_hashes[$img->getHash()], $image_filenames[$img->getFileName()]);
         }
-    } else {
-        // Image Exists, add it to our hash map
-        $image_hashes[$img->getHash()] = true;
     }
 }
 
-// Remove videos from the database that do not exist in the videos folder
 foreach ($videos_in_database as $vid) {
     if (!file_exists($video_dir_full . $vid->getFileName())) {
-        // Delete from DB
         if ($video_collection->delete($vid)) {
             $videos_removed++;
+            unset($video_hashes[$vid->getHash()], $video_filenames[$vid->getFileName()]);
         }
-    } else {
-        // Video Exists, add it to our hash map
-        $video_hashes[$vid->getHash()] = true;
     }
 }
 
-// Add New Images
+// ============================================================
+// Process New Images
+// ============================================================
+
 foreach ($images_in_folder as $file_name) {
-    // Check if the MD5 Hash already exists
-    $image_md5 = md5_file(ImageCollection::IMAGE_DIRECTORY . $file_name);
+    $file_path = ImageCollection::IMAGE_DIRECTORY . $file_name;
 
-    // Make sure the file doesn't already exist, check by MD5. Image Hash not necessary *yet*
-    if (!isset($image_hashes[$image_md5])) {
-        // Create the Image
-        $image = new Image();
-        $image->setFileName($file_name)
-            ->setFileTime(filemtime(ImageCollection::IMAGE_DIRECTORY . $file_name))
-            ->setHash($image_md5);
-
-        // Save the image (auto-creates thumbnail on save)
-        if ($image_collection->save($image) !== 0) {
-            // Move the File to the full directory.
-            rename(ImageCollection::IMAGE_DIRECTORY . $file_name, $image_dir_full . $file_name);
-
-            // Increase the Images Added Count
-            $images_added++;
-        } else {
-            // Increase the Images Not Added Count
-            $images_not_added++;
-        }
-    } else {
-        // Delete File
-        $full_file = ImageCollection::IMAGE_DIRECTORY . $file_name;
-        unlink($full_file);
-
-        $images_not_added++;
-
+    // Skip if this filename is already in the database (moved previously but not cleaned up)
+    if (isset($image_filenames[$file_name])) {
+        unlink($file_path);
+        $images_skipped++;
         continue;
+    }
+
+    // Compute MD5 hash to check for content duplicates
+    $image_md5 = md5_file($file_path);
+
+    if (isset($image_hashes[$image_md5])) {
+        // Duplicate content — delete the new file
+        unlink($file_path);
+        $images_skipped++;
+        continue;
+    }
+
+    // Create and save the new image
+    $image = new Image();
+    $image->setFileName($file_name)
+        ->setFileTime(filemtime($file_path))
+        ->setHash($image_md5);
+
+    // Save (auto-creates thumbnail and fingerprint)
+    if ($image_collection->save($image) !== 0) {
+        // Move file to the full-size directory
+        rename($file_path, $image_dir_full . $file_name);
+
+        // Add to lookup maps so subsequent files in this batch are checked
+        $image_hashes[$image_md5] = true;
+        $image_filenames[$file_name] = true;
+
+        $images_added++;
+    } else {
+        $images_skipped++;
     }
 }
 
-// Loop Through Videos and GIFs
+// ============================================================
+// Process New Videos
+// ============================================================
+
 foreach ($videos_in_folder as $file_name) {
-    $video_md5 = md5_file(VideoCollection::VIDEO_DIRECTORY . $file_name);
+    $file_path = VideoCollection::VIDEO_DIRECTORY . $file_name;
 
-    // Make sure the file doesn't already exist, check by MD5. Video Hash not necessary *yet*
-    if (!isset($video_hashes[$video_md5])) {
-        // Create a new video
-        $video = new Video();
-        $video->setFileName($file_name)
-            ->setFileTime(filemtime(VideoCollection::VIDEO_DIRECTORY . $file_name))
-            ->setHash($video_md5);
-
-        // Save the video
-        if ($video_collection->save($video) !== 0) {
-            // Move the File to the full directory.
-            rename(VideoCollection::VIDEO_DIRECTORY . $file_name, $video_dir_full . $file_name);
-
-            // Increase the Videos Added Count
-            $videos_added++;
-        } else {
-            // Increase the Videos Not Added Count
-            $videos_not_added++;
-        }
-    } else {
-        // Delete File
-        $full_file = VideoCollection::VIDEO_DIRECTORY . $file_name;
-        unlink($full_file);
-
-        $videos_not_added++;
-
+    // Skip if filename already exists in DB
+    if (isset($video_filenames[$file_name])) {
+        unlink($file_path);
+        $videos_skipped++;
         continue;
+    }
+
+    // Compute MD5 hash
+    $video_md5 = md5_file($file_path);
+
+    if (isset($video_hashes[$video_md5])) {
+        // Duplicate content — delete
+        unlink($file_path);
+        $videos_skipped++;
+        continue;
+    }
+
+    // Create and save the new video
+    $video = new Video();
+    $video->setFileName($file_name)
+        ->setFileTime(filemtime($file_path))
+        ->setHash($video_md5);
+
+    if ($video_collection->save($video) !== 0) {
+        rename($file_path, $video_dir_full . $file_name);
+
+        $video_hashes[$video_md5] = true;
+        $video_filenames[$file_name] = true;
+
+        $videos_added++;
+    } else {
+        $videos_skipped++;
     }
 }
 
-// End Script Time
+// ============================================================
+// Output Results
+// ============================================================
+
 $end_time = microtime(true);
+$execution_time = round($end_time - $start_time, 2);
 
-// Execution Time
-$execution_time = ($end_time - $start_time);
-
-// Message. Yes I know I could make one echo.
-echo "<strong>Images Added</strong>: {$images_added}</br>";
-echo "<strong>Images Removed</strong>: {$images_removed}</br>";
-echo "<strong>Images Not Added</strong>: {$images_not_added}</br>";
-echo "<strong>Videos Added</strong>: {$videos_added}</br>";
-echo "<strong>Videos Removed</strong>: {$videos_removed}</br>";
-echo "<strong>Videos Not Added</strong>: {$videos_not_added}</br>";
-echo "<strong>Execution Time</strong>: {$execution_time}</br>";
+echo "<strong>Images Added</strong>: {$images_added}<br/>";
+echo "<strong>Images Removed</strong>: {$images_removed}<br/>";
+echo "<strong>Images Skipped (duplicates)</strong>: {$images_skipped}<br/>";
+echo "<strong>Videos Added</strong>: {$videos_added}<br/>";
+echo "<strong>Videos Removed</strong>: {$videos_removed}<br/>";
+echo "<strong>Videos Skipped (duplicates)</strong>: {$videos_skipped}<br/>";
+echo "<strong>Execution Time</strong>: {$execution_time}s<br/>";
