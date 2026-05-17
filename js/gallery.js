@@ -146,8 +146,12 @@ $(function () {
     // Bind Element Events
     AddEventListenersNavigation();
 
-    // Generate Default Content
-    RenderPageGallery();
+    // Parse the current URL and route to the correct page
+    const routeInfo = parseURL();
+    navigateFromState(routeInfo);
+
+    // Replace the initial history entry with proper state
+    SetCurrentURL(true);
 });
 
 /**
@@ -651,9 +655,18 @@ function NavigationSetActive(activeLink) {
 
 /**
  * @function SetCurrentURL
- * @description Sets the current URL in the browser to the new page type and number.
+ * @description Sets the current URL in the browser to reflect the current app state.
+ * URL patterns:
+ *   /images/{page}/{perPage}/
+ *   /images/{page}/{perPage}/with-tags/{tags}/
+ *   /videos/{page}/{perPage}/
+ *   /videos/{page}/{perPage}/with-tags/{tags}/
+ *   /images/{id}/tags/   (media tags view)
+ *   /videos/{id}/tags/   (media tags view)
+ *   /tags/               (tag list page)
+ * @param {boolean} [replace=false] - If true, replaces the current history entry instead of pushing.
  */
-function SetCurrentURL() {
+function SetCurrentURL(replace = false) {
     const pageTypeMap = {
         [PAGE_IMAGES]: 'images',
         [PAGE_VIDEOS]: 'videos',
@@ -665,12 +678,176 @@ function SetCurrentURL() {
     if (SHOWING_MEDIA_TAGS) {
         newURL = `${BASE_URL}/${pageType}/${MEDIA_ID}/tags/`;
     } else if (PAGE_TYPE !== PAGE_TAGS) {
-        newURL = `${BASE_URL}/${pageType}/${CURRENT_PAGE}/`;
+        newURL = `${BASE_URL}/${pageType}/${CURRENT_PAGE}/${ITEMS_PER_PAGE}/`;
+        if (CURRENT_TAGS.length > 0) {
+            newURL += `with-tags/${encodeURIComponent(CURRENT_TAGS.join(','))}/`;
+        }
     } else {
         newURL = `${BASE_URL}/${pageType}/`;
     }
 
-    window.history.pushState({ path: newURL }, '', newURL);
+    const state = {
+        pageType: PAGE_TYPE,
+        currentPage: CURRENT_PAGE,
+        itemsPerPage: ITEMS_PER_PAGE,
+        currentTags: CURRENT_TAGS,
+        showingMediaTags: SHOWING_MEDIA_TAGS,
+        mediaId: MEDIA_ID
+    };
+
+    if (replace) {
+        window.history.replaceState(state, '', newURL);
+    } else {
+        window.history.pushState(state, '', newURL);
+    }
+}
+
+/**
+ * @function parseURL
+ * @description Parses the current URL and sets the app state accordingly.
+ * Supports the following URL patterns:
+ *   /                                          → images, page 1
+ *   /images/{page}/{perPage}/                  → images gallery
+ *   /images/{page}/{perPage}/with-tags/{tags}/ → images filtered by tags
+ *   /videos/{page}/{perPage}/                  → videos gallery
+ *   /videos/{page}/{perPage}/with-tags/{tags}/ → videos filtered by tags
+ *   /images/{id}/tags/                         → media item tags view
+ *   /videos/{id}/tags/                         → media item tags view
+ *   /tags/                                     → tag list page
+ * @returns {{ action: string, mediaId?: number }} The action to take after parsing.
+ */
+function parseURL() {
+    const path = window.location.pathname.replace(/\/+$/, ''); // strip trailing slashes
+    const segments = path.split('/').filter(Boolean);
+
+    // Default state
+    let action = 'gallery';
+
+    // No segments → default images page
+    if (segments.length === 0) {
+        PAGE_TYPE = PAGE_IMAGES;
+        CURRENT_PAGE = 1;
+        ITEMS_PER_PAGE = 40;
+        CURRENT_TAGS = [];
+        SHOWING_MEDIA_TAGS = false;
+        MEDIA_ID = null;
+        return { action };
+    }
+
+    const section = segments[0].toLowerCase();
+
+    // Set page type from first segment
+    if (section === 'videos') {
+        PAGE_TYPE = PAGE_VIDEOS;
+    } else if (section === 'tags') {
+        PAGE_TYPE = PAGE_TAGS;
+        SHOWING_MEDIA_TAGS = false;
+        MEDIA_ID = null;
+        CURRENT_TAGS = [];
+        return { action: 'tags' };
+    } else {
+        PAGE_TYPE = PAGE_IMAGES;
+    }
+
+    // Check for media tags view: /{type}/{id}/tags/
+    if (segments.length >= 3 && segments[2].toLowerCase() === 'tags') {
+        SHOWING_MEDIA_TAGS = true;
+        MEDIA_ID = parseInt(segments[1], 10);
+        return { action: 'mediaTags', mediaId: MEDIA_ID };
+    }
+
+    // Gallery view: /{type}/{page}/{perPage}/ or /{type}/{page}/{perPage}/with-tags/{tags}/
+    SHOWING_MEDIA_TAGS = false;
+    MEDIA_ID = null;
+    CURRENT_PAGE = segments.length >= 2 ? parseInt(segments[1], 10) || 1 : 1;
+    ITEMS_PER_PAGE = segments.length >= 3 ? parseInt(segments[2], 10) || 40 : 40;
+
+    // Check for tag filter
+    if (segments.length >= 5 && segments[3].toLowerCase() === 'with-tags') {
+        CURRENT_TAGS = decodeURIComponent(segments[4]).split(',').map(t => t.trim()).filter(Boolean);
+    } else {
+        CURRENT_TAGS = [];
+    }
+
+    return { action };
+}
+
+/**
+ * @function navigateFromState
+ * @description Routes to the correct page based on parsed URL state.
+ * @param {{ action: string, mediaId?: number }} routeInfo - The route info from parseURL().
+ */
+function navigateFromState(routeInfo) {
+    // Sync UI controls with state
+    syncUIWithState();
+
+    ClearPages();
+
+    switch (routeInfo.action) {
+        case 'tags':
+            NavigationSetActive($('#nav-tags-link'));
+            RenderPageTags();
+            break;
+        case 'mediaTags':
+            NavigationSetActive(PAGE_TYPE === PAGE_IMAGES ? $('#nav-images-link') : $('#nav-videos-link'));
+            // For media tags we need to fetch the item URL; use the API to get item info
+            loadMediaTagsFromURL(routeInfo.mediaId);
+            break;
+        default:
+            NavigationSetActive(PAGE_TYPE === PAGE_IMAGES ? $('#nav-images-link') : $('#nav-videos-link'));
+            RenderPageGallery();
+            break;
+    }
+}
+
+/**
+ * @function syncUIWithState
+ * @description Syncs UI controls (items-per-page select, search field) with current app state.
+ */
+function syncUIWithState() {
+    // Sync items-per-page dropdown
+    const $perPage = $('#items-per-page');
+    if ($perPage.find(`option[value="${ITEMS_PER_PAGE}"]`).length) {
+        $perPage.val(ITEMS_PER_PAGE);
+    }
+
+    // Sync tag search field
+    if (CURRENT_TAGS.length > 0) {
+        $('#nav_search_tags').val(CURRENT_TAGS.join(', '));
+        $('#search-tags').addClass('is-hidden');
+        $('#reset-tags').removeClass('is-hidden');
+    } else {
+        $('#nav_search_tags').val('');
+        $('#reset-tags').addClass('is-hidden');
+        $('#search-tags').removeClass('is-hidden');
+    }
+}
+
+/**
+ * @function loadMediaTagsFromURL
+ * @description Loads the media tags page when navigating via URL (where we only have the item ID).
+ * Fetches item details from the API to get the file URL and hash.
+ * @param {number} mediaId - The ID of the media item.
+ */
+function loadMediaTagsFromURL(mediaId) {
+    const mediaType = PAGE_TYPE === PAGE_IMAGES ? 'image' : 'video';
+    fetchApi(`${API_BASE_URL}/${mediaType}s/${mediaId}/`).then((item) => {
+        let itemURL, itemHash;
+        if (PAGE_TYPE === PAGE_IMAGES) {
+            itemURL = `${BASE_URL}/images/full/${item.file_name}`;
+            itemHash = item.hash || null;
+        } else {
+            itemURL = `${BASE_URL}/videos/full/${item.file_name}`;
+            itemHash = item.hash || null;
+        }
+        RenderPageMediaTags(mediaId, itemURL, itemHash);
+    }).catch((error) => {
+        console.error('Error loading media item from URL:', error);
+        // Fallback to gallery
+        SHOWING_MEDIA_TAGS = false;
+        MEDIA_ID = null;
+        RenderPageGallery();
+    });
 }
 
 // ============================================================
@@ -688,6 +865,37 @@ function AddEventListenersToSite() {
     $(document).on('keyup', function (event) {
         if (event.key === 'Escape') {
             CloseModal();
+        }
+    });
+
+    // Handle browser back/forward navigation
+    window.addEventListener('popstate', function (event) {
+        if (event.state) {
+            // Restore state from history entry
+            PAGE_TYPE = event.state.pageType;
+            CURRENT_PAGE = event.state.currentPage;
+            ITEMS_PER_PAGE = event.state.itemsPerPage;
+            CURRENT_TAGS = event.state.currentTags || [];
+            SHOWING_MEDIA_TAGS = event.state.showingMediaTags;
+            MEDIA_ID = event.state.mediaId;
+
+            syncUIWithState();
+            ClearPages();
+
+            if (SHOWING_MEDIA_TAGS && MEDIA_ID) {
+                NavigationSetActive(PAGE_TYPE === PAGE_IMAGES ? $('#nav-images-link') : $('#nav-videos-link'));
+                loadMediaTagsFromURL(MEDIA_ID);
+            } else if (PAGE_TYPE === PAGE_TAGS) {
+                NavigationSetActive($('#nav-tags-link'));
+                RenderPageTags();
+            } else {
+                NavigationSetActive(PAGE_TYPE === PAGE_IMAGES ? $('#nav-images-link') : $('#nav-videos-link'));
+                RenderPageGallery();
+            }
+        } else {
+            // No state — re-parse URL
+            const routeInfo = parseURL();
+            navigateFromState(routeInfo);
         }
     });
 }
@@ -708,9 +916,12 @@ function AddEventListenersNavigation() {
         CURRENT_PAGE = 1;
         PAGE_TYPE = PAGE_IMAGES;
         CURRENT_TAGS = [];
+        SHOWING_MEDIA_TAGS = false;
+        MEDIA_ID = null;
         NavigationSetActive($(this));
         ClearPages();
         RenderPageGallery();
+        SetCurrentURL();
     });
 
     // Main Links - Videos
@@ -718,18 +929,24 @@ function AddEventListenersNavigation() {
         CURRENT_PAGE = 1;
         PAGE_TYPE = PAGE_VIDEOS;
         CURRENT_TAGS = [];
+        SHOWING_MEDIA_TAGS = false;
+        MEDIA_ID = null;
         NavigationSetActive($(this));
         ClearPages();
         RenderPageGallery();
+        SetCurrentURL();
     });
 
     // Main Links - Tags
     $('#nav-tags-link').on('click', function () {
         PAGE_TYPE = PAGE_TAGS;
         CURRENT_TAGS = [];
+        SHOWING_MEDIA_TAGS = false;
+        MEDIA_ID = null;
         NavigationSetActive($(this));
         ClearPages();
         RenderPageTags();
+        SetCurrentURL();
     });
 
     // Blur Images Button
@@ -746,6 +963,7 @@ function AddEventListenersNavigation() {
         ITEMS_PER_PAGE = parseInt($(this).val(), 10);
         CURRENT_PAGE = 1;
         RenderPageGallery();
+        SetCurrentURL();
     });
 
     // Search Items with Tags
@@ -756,6 +974,7 @@ function AddEventListenersNavigation() {
         $(this).addClass('is-hidden');
         $('#reset-tags').removeClass('is-hidden');
         RenderPageGallery();
+        SetCurrentURL();
     });
 
     // Reset Search Items with Tags
@@ -766,6 +985,7 @@ function AddEventListenersNavigation() {
         $(this).addClass('is-hidden');
         $('#search-tags').removeClass('is-hidden');
         RenderPageGallery();
+        SetCurrentURL();
     });
 }
 
@@ -782,6 +1002,7 @@ function AddEventListenersGallery() {
         const itemURL = $(`#item-full-${itemID}`).prop('href');
         ClearPages();
         RenderPageMediaTags(itemID, itemURL, itemHash);
+        SetCurrentURL();
     });
 }
 
@@ -794,6 +1015,7 @@ function AddEventListenersGalleryPagination() {
     $('.pagination-link').off('click').on('click', function () {
         CURRENT_PAGE = $(this).data('page');
         RenderPageGallery();
+        SetCurrentURL();
     });
 
     // Pagination - Next
@@ -801,6 +1023,7 @@ function AddEventListenersGalleryPagination() {
         if (!$(this).hasClass('is-disabled')) {
             CURRENT_PAGE++;
             RenderPageGallery();
+            SetCurrentURL();
         }
     });
 
@@ -809,6 +1032,7 @@ function AddEventListenersGalleryPagination() {
         if (!$(this).hasClass('is-disabled')) {
             CURRENT_PAGE--;
             RenderPageGallery();
+            SetCurrentURL();
         }
     });
 }
@@ -825,6 +1049,7 @@ function AddEventListenersMediaTags() {
         MEDIA_ID = null;
         ClearPages();
         RenderPageGallery();
+        SetCurrentURL();
     });
 
     // Tag Category Shortcode Help Modal
