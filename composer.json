@@ -13,7 +13,9 @@
     "require": {
         "ext-pdo": "*",
         "ext-pdo_sqlite": "*",
+        "ext-imagick": "*",
         "jenssegers/imagehash": "^0.11.0",
+        "monolog/monolog": "^3.0",
         "php-ffmpeg/php-ffmpeg": "^1.0",
         "slim/slim": "^4.0",
         "slim/psr7": "^1.0",
@@ -27,6 +29,7 @@
         }
     },
     "require-dev": {
+        "robmorgan/phinx": "^0.16",
         "roave/security-advisories": "dev-latest",
         "squizlabs/php_codesniffer": "^4.0",
         "friendsofphp/php-cs-fixer": "^3.0",
