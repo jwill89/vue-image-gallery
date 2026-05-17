@@ -1,5 +1,12 @@
 <?php
 
+// CLI-only guard
+if (PHP_SAPI !== 'cli') {
+    http_response_code(403);
+    echo 'This script can only be run from the command line.';
+    exit(1);
+}
+
 // Error logging
 error_reporting(E_ALL);
 ini_set('display_errors', 0);
@@ -199,10 +206,10 @@ foreach ($videos_in_folder as $file_name) {
 $end_time = microtime(true);
 $execution_time = round($end_time - $start_time, 2);
 
-echo "<strong>Images Added</strong>: {$images_added}<br/>";
-echo "<strong>Images Removed</strong>: {$images_removed}<br/>";
-echo "<strong>Images Skipped (duplicates)</strong>: {$images_skipped}<br/>";
-echo "<strong>Videos Added</strong>: {$videos_added}<br/>";
-echo "<strong>Videos Removed</strong>: {$videos_removed}<br/>";
-echo "<strong>Videos Skipped (duplicates)</strong>: {$videos_skipped}<br/>";
-echo "<strong>Execution Time</strong>: {$execution_time}s<br/>";
+echo "Images Added: {$images_added}\n";
+echo "Images Removed: {$images_removed}\n";
+echo "Images Skipped (duplicates): {$images_skipped}\n";
+echo "Videos Added: {$videos_added}\n";
+echo "Videos Removed: {$videos_removed}\n";
+echo "Videos Skipped (duplicates): {$videos_skipped}\n";
+echo "Execution Time: {$execution_time}s\n";
