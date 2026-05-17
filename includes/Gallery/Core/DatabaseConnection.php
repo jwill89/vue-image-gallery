@@ -56,6 +56,12 @@ class DatabaseConnection
             self::$conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
             self::$conn->exec('PRAGMA journal_mode=WAL');
             self::$conn->exec('PRAGMA foreign_keys=ON');
+            self::$conn->exec('PRAGMA synchronous=NORMAL');
+            self::$conn->exec('PRAGMA cache_size=-20000');
+            self::$conn->exec('PRAGMA temp_store=MEMORY');
+            self::$conn->exec('PRAGMA mmap_size=268435456');
+            self::$conn->exec('PRAGMA busy_timeout=5000');
+            self::$conn->exec('PRAGMA page_size=4096');
         }
 
         return self::$conn;
