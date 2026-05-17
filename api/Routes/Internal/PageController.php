@@ -51,7 +51,7 @@ class PageController extends AbstractController
     public function getTotalImagePages(Request $request, Response $response, array $args): Response
     {
         // Get items per page from args
-        $items_per_page = $this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE);
+        $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
 
         // Assume status OK
         $status = 200;
@@ -83,7 +83,7 @@ class PageController extends AbstractController
     {
         // Get items per page from args
         $tag_list = array_map('trim', explode(',', $this->parseParameters($args, 'tag_list', '')));
-        $items_per_page = $this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE);
+        $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
 
         // Assume status OK
         $status = 200;
@@ -124,7 +124,7 @@ class PageController extends AbstractController
     public function getTotalVideoPages(Request $request, Response $response, array $args): Response
     {
         // Get items per page from args
-        $items_per_page = $this->parseParameters($args, 'items_per_page', 40);
+        $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', 40), 1), 200);
 
         // Assume status OK
         $status = 200;
@@ -156,7 +156,7 @@ class PageController extends AbstractController
     {
         // Get items per page from args
         $tag_list = array_map('trim', explode(',', $this->parseParameters($args, 'tag_list', '')));
-        $items_per_page = $this->parseParameters($args, 'items_per_page', 40);
+        $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', 40), 1), 200);
 
         // Assume status OK
         $status = 200;

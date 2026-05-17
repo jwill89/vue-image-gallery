@@ -86,7 +86,7 @@ class ImageController extends AbstractController
     {
         // Initialize variables if provided
         $page = (int)$this->parseParameters($args, 'page', 0);
-        $items_per_page = (int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE);
+        $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
 
         // Assume status OK
         $status = 200;
@@ -122,7 +122,7 @@ class ImageController extends AbstractController
         // Initialize Required Variables
         $tag_list = array_map('trim', explode(',', $this->parseParameters($args, 'tag_list', '')));
         $page = (int)$this->parseParameters($args, 'page', 1);
-        $items_per_page = (int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE);
+        $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
 
         // Assume status OK
         $status = 200;
@@ -148,7 +148,7 @@ class ImageController extends AbstractController
             $data = $this->image_collection->getWithTags($tag_ids, $page, $items_per_page);
         }
 
-        // Return data as json with HTTP status response
+        // Return data as JSON with HTTP status response
         return $response->withJson($data, $status);
     }
 
@@ -172,7 +172,7 @@ class ImageController extends AbstractController
         // Get total images
         $data = $this->image_collection->totalImages();
 
-        // Return data as json with HTTP status response
+        // Return data as JSON with HTTP status response
         return $response->withJson($data, $status);
     }
 }

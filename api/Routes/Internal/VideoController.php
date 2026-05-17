@@ -86,7 +86,7 @@ class VideoController extends AbstractController
     {
         // Initialize Page if provided
         $page = (int)$this->parseParameters($args, 'page', 0);
-        $items_per_page = (int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE);
+        $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
 
         // Assume status OK
         $status = 200;
@@ -122,7 +122,7 @@ class VideoController extends AbstractController
         // Initialize Required Variables
         $tag_list = explode(',', str_replace(' ', '', $this->parseParameters($args, 'tag_list', '')));
         $page = (int)$this->parseParameters($args, 'page', 1);
-        $items_per_page = (int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE);
+        $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
 
         // Assume status OK
         $status = 200;

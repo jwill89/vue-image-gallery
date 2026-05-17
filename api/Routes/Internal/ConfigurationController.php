@@ -32,7 +32,7 @@ class ConfigurationController extends AbstractController
         // Get total images
         $data = Configuration::GALLERY_TITLE;
 
-        // Return data as json with HTTP status response
+        // Return data as JSON with HTTP status response
         return $response->withJson($data, $status);
     }
 }

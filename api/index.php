@@ -9,11 +9,13 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Slim\Factory\AppFactory;
 use Slim\Routing\RouteCollectorProxy;
+use Routes\Internal\DuplicatesController;
 use Routes\Internal\ImageController;
 use Routes\Internal\VideoController;
 use Routes\Internal\TagController;
 use Routes\Internal\PageController;
 use Routes\Internal\ConfigurationController;
+use Gallery\Core\Configuration;
 
 // Create Container using PHP-DI
 $container = new Container();
@@ -21,7 +23,7 @@ $container = new Container();
 // Register Container
 AppFactory::setContainer($container);
 
-// Setup the App and Log
+// Set up the App and Log
 $app = AppFactory::create();
 
 // Set Base Path
@@ -37,12 +39,24 @@ $error_middleware = $app->addErrorMiddleware(false, true, true);
 // Setup Allowables and Response Origins
 $app->add(function (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface {
     $response = $handler->handle($request);
+
+    // Determine allowed origin (restrict to same origin in production)
+    $origin = $request->getHeaderLine('Origin');
+    $allowed_origins = Configuration::ALLOWED_ORIGINS;
+
+    // Only allow known origins, or same-origin requests (empty Origin header)
+    $allow_origin = '';
+    if (empty($origin) || in_array($origin, $allowed_origins, true)) {
+        $allow_origin = $origin ?: '*';
+    }
+
     return $response
         ->withHeader('Access-Control-Allow-Credentials', 'true')
-        ->withHeader('Access-Control-Allow-Origin', '*')
+        ->withHeader('Access-Control-Allow-Origin', $allow_origin)
         ->withHeader('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type, Accept, Origin, Authorization')
-        ->withHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH')
-        ->withHeader('X-Frame-Options', 'SAMEORIGIN');
+        ->withHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE')
+        ->withHeader('X-Frame-Options', 'SAMEORIGIN')
+        ->withHeader('X-Content-Type-Options', 'nosniff');
 });
 
 // Image Controllers
@@ -87,6 +101,13 @@ $app->group('/pages', function (RouteCollectorProxy $group) {
 // Configuration Controllers
 $app->group('/config', function (RouteCollectorProxy $group) {
     $group->get('/title[/]', ConfigurationController::class . ':getGalleryTitle');
+});
+
+// Duplicates Controllers
+$app->group('/duplicates', function (RouteCollectorProxy $group) {
+    $group->get('/report[/]', DuplicatesController::class . ':getLatestReport');
+    $group->post('/scan[/]', DuplicatesController::class . ':runScan');
+    $group->delete('/images[/]', DuplicatesController::class . ':deleteImages');
 });
 
 // Run the app

@@ -42,7 +42,7 @@ abstract class AbstractController
      *
      * @return mixed The value of the specified parameter or the default value.
      */
-    protected function parseParameters(array $parameters, string $parameter_name, $default_value): mixed
+    protected function parseParameters(array $parameters, string $parameter_name, mixed $default_value): mixed
     {
         return array_key_exists($parameter_name, $parameters) ? $parameters[$parameter_name] : $default_value;
     }

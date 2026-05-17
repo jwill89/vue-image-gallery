@@ -2,7 +2,6 @@
 
 namespace Gallery\Core;
 
-use Exception;
 use PDO;
 
 /**
@@ -14,8 +13,8 @@ use PDO;
 class DatabaseConnection
 {
     // Path to the SQLite database file
-    private const PATH_TO_SQLITE_DB = "../db/gallery.db";
-    private const CRON_PATH_TO_SQLITE_DB = "db/gallery.db";
+    private const string PATH_TO_SQLITE_DB = "../db/gallery.db";
+    private const string CRON_PATH_TO_SQLITE_DB = "db/gallery.db";
 
     // Access Through Connection
     private static PDO $conn;
@@ -35,7 +34,7 @@ class DatabaseConnection
      *
      * This function returns a singleton instance of the database connection.
      * It checks if the connection is already established, and if not, it creates a new PDO instance.
-     * It also handles exceptions in case the database file is not found.
+     * It determines the correct path by checking if the database file exists at each location.
      *
      * @return PDO The PDO instance representing the database connection.
      */
@@ -43,13 +42,20 @@ class DatabaseConnection
     {
         // If the connection isn't set, set it.
         if (!isset(self::$conn)) {
-            try {
-                // This is generally the correct path
-                self::$conn = new PDO("sqlite:" . self::PATH_TO_SQLITE_DB);
-            } catch (Exception $e) {
-                // We're probably in the cron, use the other path
-                self::$conn = new PDO("sqlite:" . self::CRON_PATH_TO_SQLITE_DB);
+            // Determine the correct path by checking file existence
+            if (file_exists(self::PATH_TO_SQLITE_DB)) {
+                $db_path = self::PATH_TO_SQLITE_DB;
+            } elseif (file_exists(self::CRON_PATH_TO_SQLITE_DB)) {
+                $db_path = self::CRON_PATH_TO_SQLITE_DB;
+            } else {
+                // Fallback: use the default API path (will create the file if needed)
+                $db_path = self::PATH_TO_SQLITE_DB;
             }
+
+            self::$conn = new PDO("sqlite:" . $db_path);
+            self::$conn->setAttribute(PDO::ATTR_ERRMODE, PDO::ERRMODE_EXCEPTION);
+            self::$conn->exec('PRAGMA journal_mode=WAL');
+            self::$conn->exec('PRAGMA foreign_keys=ON');
         }
 
         return self::$conn;

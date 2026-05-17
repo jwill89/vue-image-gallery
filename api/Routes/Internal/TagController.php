@@ -19,6 +19,12 @@ use Gallery\Structure\Tag;
  */
 class TagController extends AbstractController
 {
+    // Maximum allowed tag name length
+    private const int MAX_TAG_NAME_LENGTH = 100;
+
+    // Valid category IDs
+    private const array VALID_CATEGORY_IDS = [1, 2, 3, 4, 5];
+
     private TagCollection $tag_collection;
     private TagCategoryCollection $tag_category_collection;
     private ImageCollection $image_collection;
@@ -100,7 +106,7 @@ class TagController extends AbstractController
         // Get all tags
         $data = $this->tag_collection->getAll();
 
-        // Return data as json with HTTP status response
+        // Return data as JSON with HTTP status response
         return $response->withJson($data, $status);
     }
 
@@ -133,7 +139,7 @@ class TagController extends AbstractController
     {
         // Initialize Required Variables
         $params = $request->getParsedBody();
-        $tag_name = trim($this->parseParameters($params, 'tag_name', ''));
+        $tag_name = $this->sanitizeTagName($this->parseParameters($params, 'tag_name', ''));
         $tag_category = (int)$this->parseParameters($params, 'category_id', 1);
 
         // Assume OK status
@@ -142,9 +148,15 @@ class TagController extends AbstractController
         // Initialize Data
         $data = true;
 
-        // Check for valid tag name
+        // Validate tag name
         if (empty($tag_name)) {
             $data = ['error' => 'InvalidTagName'];
+            $status = 400;
+        } elseif (mb_strlen($tag_name) > self::MAX_TAG_NAME_LENGTH) {
+            $data = ['error' => 'TagNameTooLong'];
+            $status = 400;
+        } elseif (!in_array($tag_category, self::VALID_CATEGORY_IDS, true)) {
+            $data = ['error' => 'InvalidCategoryID'];
             $status = 400;
         } elseif ($this->tag_collection->getByName($tag_name) instanceof Tag) {
             $data = ['error' => 'TagAlreadyExists'];
@@ -174,7 +186,7 @@ class TagController extends AbstractController
         // Initialize Required Variables
         $params = $request->getParsedBody();
         $tag_id = (int)$this->parseParameters($args, 'tag_id', 0);
-        $tag_name = trim($this->parseParameters($params, 'tag_name', ''));
+        $tag_name = $this->sanitizeTagName($this->parseParameters($params, 'tag_name', ''));
         $tag_category = (int)$this->parseParameters($params, 'category_id', 1);
 
         // Assume OK status
@@ -189,6 +201,12 @@ class TagController extends AbstractController
             $status = 400;
         } elseif (empty($tag_name)) {
             $data = ['error' => 'InvalidTagName'];
+            $status = 400;
+        } elseif (mb_strlen($tag_name) > self::MAX_TAG_NAME_LENGTH) {
+            $data = ['error' => 'TagNameTooLong'];
+            $status = 400;
+        } elseif (!in_array($tag_category, self::VALID_CATEGORY_IDS, true)) {
+            $data = ['error' => 'InvalidCategoryID'];
             $status = 400;
         } else {
             // Get the tag
@@ -574,7 +592,31 @@ class TagController extends AbstractController
             }
         }
 
-        // Return data as json with HTTP status response
+        // Return data as JSON with HTTP status response
         return $response->withJson($data, $status);
+    }
+
+    /**
+     * sanitizeTagName function
+     * Trims, lowercases, and strips dangerous characters from a tag name.
+     *
+     * @param string $tag_name The raw tag name input.
+     * @return string The sanitized tag name.
+     */
+    private function sanitizeTagName(string $tag_name): string
+    {
+        // Trim whitespace
+        $tag_name = trim($tag_name);
+
+        // Convert to lowercase
+        $tag_name = mb_strtolower($tag_name, 'UTF-8');
+
+        // Strip HTML/PHP tags
+        $tag_name = strip_tags($tag_name);
+
+        // Remove control characters but allow normal Unicode
+        $tag_name = preg_replace('/[\x00-\x1F\x7F]/u', '', $tag_name);
+
+        return $tag_name;
     }
 }
