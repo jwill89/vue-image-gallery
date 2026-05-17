@@ -32,9 +32,8 @@ export function useMediaTags() {
   async function addTags(mediaType: 'images' | 'videos', mediaId: number, tagList: string) {
     const singular = mediaType === 'images' ? 'image' : 'video'
     try {
-      await api.patch(`/tags/${singular}/add/`, { item_id: mediaId, tag_list: tagList })
-      // Refresh tags for this item and global tags
-      const updatedTags = await api.get<Tag[]>(`/tags/for/${singular}/${mediaId}/`)
+      // PATCH returns the updated tag list directly
+      const updatedTags = await api.patch<Tag[]>(`/tags/${singular}/add/`, { item_id: mediaId, tag_list: tagList })
       tags.value = updatedTags ?? []
       store.refreshTags()
     } catch (e: any) {
@@ -45,8 +44,9 @@ export function useMediaTags() {
   async function removeTag(mediaType: 'images' | 'videos', mediaId: number, tagId: number) {
     const singular = mediaType === 'images' ? 'image' : 'video'
     try {
-      await api.patch(`/tags/${singular}/remove/`, { item_id: mediaId, tag_id: tagId })
-      tags.value = tags.value.filter(t => t.tag_id !== tagId)
+      // PATCH returns the updated tag list directly
+      const updatedTags = await api.patch<Tag[]>(`/tags/${singular}/remove/`, { item_id: mediaId, tag_id: tagId })
+      tags.value = updatedTags ?? []
     } catch (e: any) {
       error.value = e.message || 'Failed to remove tag'
     }
@@ -54,4 +54,3 @@ export function useMediaTags() {
 
   return { tags, mediaItem, loading, error, fetchMediaAndTags, addTags, removeTag }
 }
-

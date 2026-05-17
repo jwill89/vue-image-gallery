@@ -31,7 +31,6 @@ async function load() {
     const folder = props.mediaType === 'images' ? 'images/full' : 'videos/full'
     mediaUrl.value = `/${folder}/${mediaItem.value.file_name}`
   }
-  document.title = `Gallery - ${props.mediaType === 'images' ? 'Image' : 'Video'} Tags`
 }
 
 function backToGallery() {

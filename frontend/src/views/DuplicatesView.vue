@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useApi } from '../composables/useApi'
+import { useApi, hasAuthToken, setAuthToken } from '../composables/useApi'
 import { useGalleryStore } from '../stores/gallery'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
@@ -28,6 +28,12 @@ interface DupeReport {
 const api = useApi()
 const store = useGalleryStore()
 
+// Auth state
+const authenticated = ref(hasAuthToken())
+const passwordInput = ref('')
+const authError = ref<string | null>(null)
+const authLoading = ref(false)
+
 const report = ref<DupeReport | null>(null)
 const loading = ref(false)
 const scanning = ref(false)
@@ -39,6 +45,22 @@ const selectedImages = ref<Set<number>>(new Set())
 const hasSelection = computed(() => selectedImages.value.size > 0)
 const selectionCount = computed(() => selectedImages.value.size)
 
+async function login() {
+  authLoading.value = true
+  authError.value = null
+  try {
+    const result = await api.post<{ token: string }>('/auth/login/', { password: passwordInput.value })
+    setAuthToken(result.token)
+    authenticated.value = true
+    passwordInput.value = ''
+    await loadReport()
+  } catch (e: any) {
+    authError.value = 'Invalid password'
+  } finally {
+    authLoading.value = false
+  }
+}
+
 async function loadReport() {
   loading.value = true
   error.value = null
@@ -47,6 +69,10 @@ async function loadReport() {
   try {
     report.value = await api.get<DupeReport>('/duplicates/report/')
   } catch (e: any) {
+    if (e.message?.includes('401')) {
+      authenticated.value = false
+      return
+    }
     if (e.message?.includes('404')) {
       error.value = 'No duplicate reports found. Run a scan to generate one.'
     } else {
@@ -91,7 +117,7 @@ async function deleteSelected() {
     // Reload report to reflect deletions
     await loadReport()
     // Refresh totals in footer
-    store.initialize()
+    await store.refreshTotals()
   } catch (e: any) {
     error.value = e.message || 'Failed to delete images'
   } finally {
@@ -136,160 +162,201 @@ function fullUrl(fileName: string): string {
 }
 
 onMounted(() => {
-  loadReport()
-  document.title = 'Gallery - Duplicates'
+  if (authenticated.value) {
+    loadReport()
+  }
 })
 </script>
 
 <template>
   <section class="section">
     <div class="container">
-      <!-- Header -->
-      <div class="level">
-        <div class="level-left">
-          <div class="level-item">
-            <h1 class="title">Duplicate Images</h1>
-          </div>
-        </div>
-        <div class="level-right">
-          <div class="level-item">
-            <button class="button is-info" :class="{ 'is-loading': scanning }" :disabled="scanning" @click="runScan">
-              <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
-              <span>Run New Scan</span>
-            </button>
-          </div>
-          <div class="level-item" v-if="hasSelection">
-            <button class="button is-danger" :class="{ 'is-loading': deleting }" :disabled="deleting" @click="deleteSelected">
-              <span class="icon"><i class="fa-solid fa-trash"></i></span>
-              <span>Delete Selected ({{ selectionCount }})</span>
-            </button>
-          </div>
-        </div>
-      </div>
-
-      <!-- Messages -->
-      <div class="notification is-success is-light" v-if="successMessage">
-        <button class="delete" @click="successMessage = null"></button>
-        {{ successMessage }}
-      </div>
-      <ErrorMessage v-if="error" :message="error" />
-
-      <!-- Loading -->
-      <LoadingSpinner v-if="loading" message="Loading duplicates report..." />
-
-      <!-- Report Content -->
-      <template v-else-if="report">
-        <!-- Report metadata -->
-        <div class="box mb-5">
-          <div class="columns">
-            <div class="column has-text-centered">
-              <p class="heading">Report File</p>
-              <p class="title is-6">{{ report.report_file }}</p>
-            </div>
-            <div class="column has-text-centered">
-              <p class="heading">Generated</p>
-              <p class="title is-6">{{ report.generated_at || 'Unknown' }}</p>
-            </div>
-            <div class="column has-text-centered">
-              <p class="heading">Images Compared</p>
-              <p class="title is-6">{{ report.images_compared?.toLocaleString() || '—' }}</p>
-            </div>
-            <div class="column has-text-centered">
-              <p class="heading">Duplicates Found</p>
-              <p class="title is-6">{{ report.duplicates_found }}</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Selection Controls -->
-        <div class="buttons mb-4" v-if="report.matches.length > 0">
-          <button class="button is-small is-warning" @click="selectAll">
-            <span class="icon"><i class="fa-solid fa-check-double"></i></span>
-            <span>Select All Duplicates (Right Column)</span>
-          </button>
-          <button class="button is-small" @click="clearSelection" v-if="hasSelection">
-            <span class="icon"><i class="fa-solid fa-xmark"></i></span>
-            <span>Clear Selection</span>
-          </button>
-        </div>
-
-        <!-- No duplicates -->
-        <div class="notification is-info is-light" v-if="report.matches.length === 0">
-          No duplicate pairs found in the latest report.
-        </div>
-
-        <!-- Duplicate Pairs -->
-        <div v-for="(match, index) in report.matches" :key="index" class="box mb-4">
-          <div class="columns is-vcentered">
-            <!-- Image 1 -->
-            <div class="column is-5">
-              <div class="card" :class="{ 'has-background-danger-light': isSelected(match.image_1.image_id) }">
-                <div class="card-content has-text-centered has-background-grey-darker">
-                  <figure class="image">
-                    <a :href="fullUrl(match.image_1.file_name)" target="_blank">
-                      <img :src="thumbnailUrl(match.image_1.file_name)" alt=""
-                        :class="['gallery-image', { 'thumb-blur': store.blurThumbnails }]" />
-                    </a>
-                  </figure>
+      <!-- Login Gate -->
+      <template v-if="!authenticated">
+        <div class="columns is-centered">
+          <div class="column is-4">
+            <div class="box">
+              <h2 class="title is-4 has-text-centered">
+                <span class="icon"><i class="fa-solid fa-lock"></i></span>
+                Authentication Required
+              </h2>
+              <p class="has-text-centered mb-4">Enter the admin password to access the duplicates page.</p>
+              <div class="field">
+                <div class="control has-icons-left">
+                  <input
+                    class="input"
+                    :class="{ 'is-danger': authError }"
+                    type="password"
+                    placeholder="Password"
+                    v-model="passwordInput"
+                    @keyup.enter="login"
+                  />
+                  <span class="icon is-left"><i class="fa-solid fa-key"></i></span>
                 </div>
-                <footer class="card-footer">
-                  <div class="card-footer-item">
-                    <label class="checkbox">
-                      <input type="checkbox" :checked="isSelected(match.image_1.image_id)"
-                        @change="toggleSelect(match.image_1.image_id)" />
-                      &nbsp;Select
-                    </label>
-                  </div>
-                  <div class="card-footer-item">
-                    <span class="is-size-7">ID: {{ match.image_1.image_id }}</span>
-                  </div>
-                  <a class="card-footer-item" :href="fullUrl(match.image_1.file_name)" target="_blank">
-                    <span class="icon has-text-info-dark"><i class="fa-solid fa-up-right-from-square"></i></span>
-                  </a>
-                </footer>
+                <p v-if="authError" class="help is-danger">{{ authError }}</p>
               </div>
+              <button
+                class="button is-primary is-fullwidth"
+                :class="{ 'is-loading': authLoading }"
+                :disabled="authLoading || !passwordInput"
+                @click="login"
+              >
+                Login
+              </button>
             </div>
+          </div>
+        </div>
+      </template>
 
-            <!-- Distance indicator -->
-            <div class="column is-2 has-text-centered">
-              <span class="icon is-large has-text-warning">
-                <i class="fa-solid fa-arrows-left-right fa-2x"></i>
-              </span>
-              <p class="is-size-7 mt-2" v-if="match.distance !== null">
-                Distance: {{ match.distance }}
-              </p>
+      <!-- Authenticated Content -->
+      <template v-else>
+        <!-- Header -->
+        <div class="level">
+          <div class="level-left">
+            <div class="level-item">
+              <h1 class="title">Duplicate Images</h1>
             </div>
+          </div>
+          <div class="level-right">
+            <div class="level-item">
+              <button class="button is-info" :class="{ 'is-loading': scanning }" :disabled="scanning" @click="runScan">
+                <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+                <span>Run New Scan</span>
+              </button>
+            </div>
+            <div class="level-item" v-if="hasSelection">
+              <button class="button is-danger" :class="{ 'is-loading': deleting }" :disabled="deleting" @click="deleteSelected">
+                <span class="icon"><i class="fa-solid fa-trash"></i></span>
+                <span>Delete Selected ({{ selectionCount }})</span>
+              </button>
+            </div>
+          </div>
+        </div>
 
-            <!-- Image 2 -->
-            <div class="column is-5">
-              <div class="card" :class="{ 'has-background-danger-light': isSelected(match.image_2.image_id) }">
-                <div class="card-content has-text-centered has-background-grey-darker">
-                  <figure class="image">
-                    <a :href="fullUrl(match.image_2.file_name)" target="_blank">
-                      <img :src="thumbnailUrl(match.image_2.file_name)" alt=""
-                        :class="['gallery-image', { 'thumb-blur': store.blurThumbnails }]" />
-                    </a>
-                  </figure>
-                </div>
-                <footer class="card-footer">
-                  <div class="card-footer-item">
-                    <label class="checkbox">
-                      <input type="checkbox" :checked="isSelected(match.image_2.image_id)"
-                        @change="toggleSelect(match.image_2.image_id)" />
-                      &nbsp;Select
-                    </label>
-                  </div>
-                  <div class="card-footer-item">
-                    <span class="is-size-7">ID: {{ match.image_2.image_id }}</span>
-                  </div>
-                  <a class="card-footer-item" :href="fullUrl(match.image_2.file_name)" target="_blank">
-                    <span class="icon has-text-info-dark"><i class="fa-solid fa-up-right-from-square"></i></span>
-                  </a>
-                </footer>
+        <!-- Messages -->
+        <div class="notification is-success is-light" v-if="successMessage">
+          <button class="delete" @click="successMessage = null"></button>
+          {{ successMessage }}
+        </div>
+        <ErrorMessage v-if="error" :message="error" />
+
+        <!-- Loading -->
+        <LoadingSpinner v-if="loading" message="Loading duplicates report..." />
+
+        <!-- Report Content -->
+        <template v-else-if="report">
+          <!-- Report metadata -->
+          <div class="box mb-5">
+            <div class="columns">
+              <div class="column has-text-centered">
+                <p class="heading">Report File</p>
+                <p class="title is-6">{{ report.report_file }}</p>
+              </div>
+              <div class="column has-text-centered">
+                <p class="heading">Generated</p>
+                <p class="title is-6">{{ report.generated_at || 'Unknown' }}</p>
+              </div>
+              <div class="column has-text-centered">
+                <p class="heading">Images Compared</p>
+                <p class="title is-6">{{ report.images_compared?.toLocaleString() || '—' }}</p>
+              </div>
+              <div class="column has-text-centered">
+                <p class="heading">Duplicates Found</p>
+                <p class="title is-6">{{ report.duplicates_found }}</p>
               </div>
             </div>
           </div>
-        </div>
+
+          <!-- Selection Controls -->
+          <div class="buttons mb-4" v-if="report.matches.length > 0">
+            <button class="button is-small is-warning" @click="selectAll">
+              <span class="icon"><i class="fa-solid fa-check-double"></i></span>
+              <span>Select All Duplicates (Right Column)</span>
+            </button>
+            <button class="button is-small" @click="clearSelection" v-if="hasSelection">
+              <span class="icon"><i class="fa-solid fa-xmark"></i></span>
+              <span>Clear Selection</span>
+            </button>
+          </div>
+
+          <!-- No duplicates -->
+          <div class="notification is-info is-light" v-if="report.matches.length === 0">
+            No duplicate pairs found in the latest report.
+          </div>
+
+          <!-- Duplicate Pairs -->
+          <div v-for="(match, index) in report.matches" :key="index" class="box mb-4">
+            <div class="columns is-vcentered">
+              <!-- Image 1 -->
+              <div class="column is-5">
+                <div class="card" :class="{ 'has-background-danger-light': isSelected(match.image_1.image_id) }">
+                  <div class="card-content has-text-centered has-background-grey-darker">
+                    <figure class="image">
+                      <a :href="fullUrl(match.image_1.file_name)" target="_blank">
+                        <img :src="thumbnailUrl(match.image_1.file_name)" alt=""
+                          :class="['gallery-image', { 'thumb-blur': store.blurThumbnails }]" />
+                      </a>
+                    </figure>
+                  </div>
+                  <footer class="card-footer">
+                    <div class="card-footer-item">
+                      <label class="checkbox">
+                        <input type="checkbox" :checked="isSelected(match.image_1.image_id)"
+                          @change="toggleSelect(match.image_1.image_id)" />
+                        &nbsp;Select
+                      </label>
+                    </div>
+                    <div class="card-footer-item">
+                      <span class="is-size-7">ID: {{ match.image_1.image_id }}</span>
+                    </div>
+                    <a class="card-footer-item" :href="fullUrl(match.image_1.file_name)" target="_blank">
+                      <span class="icon has-text-info-dark"><i class="fa-solid fa-up-right-from-square"></i></span>
+                    </a>
+                  </footer>
+                </div>
+              </div>
+
+              <!-- Distance indicator -->
+              <div class="column is-2 has-text-centered">
+                <span class="icon is-large has-text-warning">
+                  <i class="fa-solid fa-arrows-left-right fa-2x"></i>
+                </span>
+                <p class="is-size-7 mt-2" v-if="match.distance !== null">
+                  Distance: {{ match.distance }}
+                </p>
+              </div>
+
+              <!-- Image 2 -->
+              <div class="column is-5">
+                <div class="card" :class="{ 'has-background-danger-light': isSelected(match.image_2.image_id) }">
+                  <div class="card-content has-text-centered has-background-grey-darker">
+                    <figure class="image">
+                      <a :href="fullUrl(match.image_2.file_name)" target="_blank">
+                        <img :src="thumbnailUrl(match.image_2.file_name)" alt=""
+                          :class="['gallery-image', { 'thumb-blur': store.blurThumbnails }]" />
+                      </a>
+                    </figure>
+                  </div>
+                  <footer class="card-footer">
+                    <div class="card-footer-item">
+                      <label class="checkbox">
+                        <input type="checkbox" :checked="isSelected(match.image_2.image_id)"
+                          @change="toggleSelect(match.image_2.image_id)" />
+                        &nbsp;Select
+                      </label>
+                    </div>
+                    <div class="card-footer-item">
+                      <span class="is-size-7">ID: {{ match.image_2.image_id }}</span>
+                    </div>
+                    <a class="card-footer-item" :href="fullUrl(match.image_2.file_name)" target="_blank">
+                      <span class="icon has-text-info-dark"><i class="fa-solid fa-up-right-from-square"></i></span>
+                    </a>
+                  </footer>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
       </template>
     </div>
   </section>

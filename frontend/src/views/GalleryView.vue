@@ -22,12 +22,24 @@ const { items, totalPages, loading, error, fetchPage } = useGalleryData()
 const lightboxVisible = ref(false)
 const lightboxIndex = ref(0)
 
+// Video extensions for detection
+const VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'gif']
+
+function isVideoFile(fileName: string): boolean {
+  const ext = fileName.split('.').pop()?.toLowerCase() ?? ''
+  return VIDEO_EXTENSIONS.includes(ext)
+}
+
 const lightboxImages = computed(() =>
   items.value.map(item => {
-    if (props.mediaType === 'images') {
-      return `/images/full/${item.file_name}`
+    const folder = props.mediaType === 'images' ? 'images/full' : 'videos/full'
+    const url = `/${folder}/${item.file_name}`
+
+    // vue-easy-lightbox supports video via object format
+    if (props.mediaType === 'videos' || isVideoFile(item.file_name)) {
+      return { src: url, mediaType: 'video' }
     }
-    return `/videos/full/${item.file_name}`
+    return url
   })
 )
 
@@ -42,7 +54,6 @@ function onLightboxHide() {
 
 function loadPage() {
   fetchPage(props.mediaType, props.page, props.perPage, props.tags)
-  document.title = `Gallery - ${props.mediaType === 'images' ? 'Images' : 'Videos'}`
 }
 
 onMounted(loadPage)

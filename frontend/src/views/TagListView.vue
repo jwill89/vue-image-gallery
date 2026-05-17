@@ -206,7 +206,6 @@ function onTagNameInput() {
 
 onMounted(() => {
   loadTags()
-  document.title = 'Gallery - Tags'
 })
 </script>
 

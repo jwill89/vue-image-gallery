@@ -11,6 +11,7 @@ const router = createRouter({
       path: '/images/:page?/:perPage?',
       name: 'images',
       component: () => import('../views/GalleryView.vue'),
+      meta: { title: 'Images' },
       props: route => ({
         mediaType: 'images',
         page: Number(route.params.page) || 1,
@@ -21,6 +22,7 @@ const router = createRouter({
       path: '/images/:page/:perPage/with-tags/:tags',
       name: 'images-with-tags',
       component: () => import('../views/GalleryView.vue'),
+      meta: { title: 'Images' },
       props: route => ({
         mediaType: 'images',
         page: Number(route.params.page) || 1,
@@ -32,6 +34,7 @@ const router = createRouter({
       path: '/videos/:page?/:perPage?',
       name: 'videos',
       component: () => import('../views/GalleryView.vue'),
+      meta: { title: 'Videos' },
       props: route => ({
         mediaType: 'videos',
         page: Number(route.params.page) || 1,
@@ -42,6 +45,7 @@ const router = createRouter({
       path: '/videos/:page/:perPage/with-tags/:tags',
       name: 'videos-with-tags',
       component: () => import('../views/GalleryView.vue'),
+      meta: { title: 'Videos' },
       props: route => ({
         mediaType: 'videos',
         page: Number(route.params.page) || 1,
@@ -53,6 +57,7 @@ const router = createRouter({
       path: '/images/:id/tags',
       name: 'image-tags',
       component: () => import('../views/MediaTagsView.vue'),
+      meta: { title: 'Image Tags' },
       props: route => ({
         mediaType: 'images',
         mediaId: Number(route.params.id)
@@ -62,6 +67,7 @@ const router = createRouter({
       path: '/videos/:id/tags',
       name: 'video-tags',
       component: () => import('../views/MediaTagsView.vue'),
+      meta: { title: 'Video Tags' },
       props: route => ({
         mediaType: 'videos',
         mediaId: Number(route.params.id)
@@ -70,12 +76,20 @@ const router = createRouter({
     {
       path: '/tags',
       name: 'tags',
+      meta: { title: 'Tags' },
       component: () => import('../views/TagListView.vue')
     },
     {
       path: '/duplicates',
       name: 'duplicates',
+      meta: { title: 'Duplicates' },
       component: () => import('../views/DuplicatesView.vue')
+    },
+    {
+      path: '/:pathMatch(.*)*',
+      name: 'not-found',
+      meta: { title: 'Not Found' },
+      component: () => import('../views/NotFoundView.vue')
     }
   ],
   scrollBehavior() {
@@ -83,5 +97,10 @@ const router = createRouter({
   }
 })
 
-export default router
+// Set document title from route meta
+router.afterEach((to) => {
+  const title = to.meta.title as string | undefined
+  document.title = title ? `Gallery - ${title}` : 'Gallery'
+})
 
+export default router

@@ -1,5 +1,5 @@
 import { defineStore } from 'pinia'
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useApi } from '../composables/useApi'
 
 export interface Tag {
@@ -28,29 +28,37 @@ export const useGalleryStore = defineStore('gallery', () => {
   const allTags = ref<Tag[]>([])
   const totalImages = ref(0)
   const totalVideos = ref(0)
-  const blurThumbnails = ref(false)
+  const blurThumbnails = ref(localStorage.getItem('blurThumbnails') === 'true')
   const loading = ref(false)
   const error = ref<string | null>(null)
+  const initialized = ref(false)
+
+  // Persist blur preference
+  watch(blurThumbnails, (val) => {
+    localStorage.setItem('blurThumbnails', String(val))
+  })
 
   // Getters
   const tagNames = computed(() => allTags.value.map(t => t.tag_name))
 
   // Actions
   async function initialize() {
+    if (initialized.value) return
+    initialized.value = true
+
     try {
-      const [title, tags, imgTotal, vidTotal] = await Promise.all([
-        api.get<string>('/config/title/'),
+      const [tags, imgTotal, vidTotal] = await Promise.all([
         api.get<Tag[]>('/tags/all/'),
         api.get<number>('/images/total/'),
         api.get<number>('/videos/total/')
       ])
-      pageTitle.value = title
       allTags.value = tags ?? []
       totalImages.value = imgTotal ?? 0
       totalVideos.value = vidTotal ?? 0
     } catch (e) {
       console.error('Initialization error:', e)
       error.value = 'Failed to initialize gallery'
+      initialized.value = false
     }
   }
 
@@ -60,6 +68,19 @@ export const useGalleryStore = defineStore('gallery', () => {
       allTags.value = tags ?? []
     } catch (e) {
       console.error('Error refreshing tags:', e)
+    }
+  }
+
+  async function refreshTotals() {
+    try {
+      const [imgTotal, vidTotal] = await Promise.all([
+        api.get<number>('/images/total/'),
+        api.get<number>('/videos/total/')
+      ])
+      totalImages.value = imgTotal ?? 0
+      totalVideos.value = vidTotal ?? 0
+    } catch (e) {
+      console.error('Error refreshing totals:', e)
     }
   }
 
@@ -78,7 +99,7 @@ export const useGalleryStore = defineStore('gallery', () => {
     tagNames,
     initialize,
     refreshTags,
+    refreshTotals,
     toggleBlur
   }
 })
-
