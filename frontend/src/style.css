@@ -1,0 +1,38 @@
+.parent {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-content: flex-start;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin: 0 auto;
+}
+.parent::after {
+  content: "";
+  flex: auto;
+}
+.child {
+  margin: 0 1rem 2rem 1rem;
+}
+.tags-page-img {
+  max-width: fit-content;
+  filter: drop-shadow(3px 3px 5px black);
+  transition: filter 0.3s ease-in-out 0s;
+}
+.sticky-footer {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+}
+.thumb-blur {
+  filter: blur(10px) grayscale(0.5);
+}
+.gallery-image {
+  transition: filter 0.3s ease-in-out;
+}
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 50vh;
+}
