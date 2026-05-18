@@ -61,6 +61,17 @@ class VideoCollection
     }
 
     /**
+     * Gets a lightweight summary of all videos (only ID, file_name, and hash).
+     * Used by cron.php for orphan detection and deduplication without loading full objects.
+     *
+     * @return array[] Array of associative arrays with video_id, file_name, and hash.
+     */
+    public function getAllSummary(): array
+    {
+        return $this->storage->retrieveSummary();
+    }
+
+    /**
      * Gets a number of videos based on the supplied page number.
      *
      * @param int $page_number The page number to retrieve.
@@ -280,7 +291,7 @@ class VideoCollection
                 unlink($thumbnail_path);
             }
         } else {
-            throw new OutOfBoundsException('Image not found in database.');
+            throw new OutOfBoundsException('Video not found in database.');
         }
 
         return true;

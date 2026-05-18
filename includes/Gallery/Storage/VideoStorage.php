@@ -198,6 +198,20 @@ class VideoStorage
     }
 
     /**
+     * Retrieves a lightweight summary of all videos (only ID, file_name, and hash).
+     * Used by cron.php to avoid loading full Video objects into memory.
+     *
+     * @return array[] Array of associative arrays with video_id, file_name, and hash keys.
+     */
+    public function retrieveSummary(): array
+    {
+        $sql = "SELECT video_id, file_name, hash FROM " . self::MAIN_TABLE . " ORDER BY video_id DESC";
+        $stmt = $this->db->query($sql);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
      * Saves a video to the database.
      *
      * @param Video $video The video object to store.
@@ -213,9 +227,8 @@ class VideoStorage
             $stmt->bindValue(':file_time', $video->getFileTime(), PDO::PARAM_INT);
             $stmt->bindValue(':hash', $video->getHash(), PDO::PARAM_STR);
 
-            if ($stmt->execute()) {
-                $video->setVideoId((int)$this->db->lastInsertId());
-            }
+            $stmt->execute();
+            $video->setVideoId((int)$this->db->lastInsertId());
         }
 
         return $video->getVideoId();

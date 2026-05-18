@@ -29,13 +29,12 @@ export function useMediaTags() {
     }
   }
 
-  async function addTags(mediaType: 'images' | 'videos', mediaId: number, tagList: string) {
+  async function addTags(mediaType: 'images' | 'videos', mediaId: number, tagIds: number[]) {
     const singular = mediaType === 'images' ? 'image' : 'video'
     try {
-      // PATCH returns the updated tag list directly
-      const updatedTags = await api.patch<Tag[]>(`/tags/${singular}/add/`, { item_id: mediaId, tag_list: tagList })
+      const updatedTags = await api.patch<Tag[]>(`/tags/${singular}/add/`, { item_id: mediaId, tag_ids: tagIds })
       tags.value = updatedTags ?? []
-      store.refreshTags()
+      await store.refreshTags()
     } catch (e: any) {
       error.value = e.message || 'Failed to add tags'
     }

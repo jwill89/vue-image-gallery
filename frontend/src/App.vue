@@ -3,6 +3,7 @@ import { ref, onMounted, onUnmounted } from 'vue'
 import { useGalleryStore } from './stores/gallery'
 import AppNavbar from './components/AppNavbar.vue'
 import AppFooter from './components/AppFooter.vue'
+import ToastContainer from './components/ToastContainer.vue'
 
 const store = useGalleryStore()
 const navbarHeight = ref(52)
@@ -32,7 +33,12 @@ onUnmounted(() => {
 <template>
   <div class="sticky-footer has-navbar-fixed-top" :style="{ paddingTop: navbarHeight + 'px' }">
     <AppNavbar />
-    <router-view />
+    <router-view v-slot="{ Component }">
+      <Transition name="page-fade" mode="out-in">
+        <component :is="Component" />
+      </Transition>
+    </router-view>
     <AppFooter />
+    <ToastContainer />
   </div>
 </template>

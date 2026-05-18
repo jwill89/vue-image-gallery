@@ -202,6 +202,20 @@ class ImageStorage
     }
 
     /**
+     * Retrieves a lightweight summary of all images (only ID, file_name, and hash).
+     * Used by cron.php to avoid loading full Image objects into memory.
+     *
+     * @return array[] Array of associative arrays with image_id, file_name, and hash keys.
+     */
+    public function retrieveSummary(): array
+    {
+        $sql = "SELECT image_id, file_name, hash FROM " . self::MAIN_TABLE . " ORDER BY image_id DESC";
+        $stmt = $this->db->query($sql);
+
+        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+    }
+
+    /**
      * Saves an image to the database.
      *
      * @param Image $image The image object to save.
@@ -218,9 +232,8 @@ class ImageStorage
             $stmt->bindValue(':hash', $image->getHash(), PDO::PARAM_STR);
             $stmt->bindValue(':bits_fingerprint', $image->getBitsFingerprint(), PDO::PARAM_STR);
 
-            if ($stmt->execute()) {
-                $image->setImageId((int)$this->db->lastInsertId());
-            }
+            $stmt->execute();
+            $image->setImageId((int)$this->db->lastInsertId());
         }
 
         return $image->getImageId();

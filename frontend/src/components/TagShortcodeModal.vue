@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { TAG_CATEGORIES } from '../constants/categories'
 </script>
 
 <template>
@@ -22,30 +23,10 @@
             </tr>
           </thead>
           <tbody>
-            <tr>
-              <td><span class="tag is-white">General</span></td>
-              <td><code>g:</code></td>
-              <td>General terms that describe features. Default if no shortcode is used.</td>
-            </tr>
-            <tr>
-              <td><span class="tag is-danger">Artist</span></td>
-              <td><code>a:</code></td>
-              <td>The artist who created this specific piece.</td>
-            </tr>
-            <tr>
-              <td><span class="tag is-success">Character</span></td>
-              <td><code>c:</code></td>
-              <td>Character name. Use "First Last" format, e.g., <code>c:ichigo kurosaki</code>.</td>
-            </tr>
-            <tr>
-              <td><span class="tag is-warning">Source</span></td>
-              <td><code>s:</code></td>
-              <td>Source material (movie, game, anime, etc.), e.g., <code>s:dragonball super</code>.</td>
-            </tr>
-            <tr>
-              <td><span class="tag is-info">Personal List</span></td>
-              <td><code>p:</code></td>
-              <td>Personal lists for individuals to record favorites.</td>
+            <tr v-for="cat in TAG_CATEGORIES" :key="cat.id">
+              <td><span class="tag" :class="cat.tagClass">{{ cat.name }}</span></td>
+              <td><code>{{ cat.shortcode }}:</code></td>
+              <td>{{ cat.description }}</td>
             </tr>
           </tbody>
         </table>

@@ -1,25 +1,16 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useApi } from '../composables/useApi'
+import { useApi, hasAuthToken } from '../composables/useApi'
 import { useGalleryStore, type Tag } from '../stores/gallery'
+import {
+  TAG_CATEGORIES,
+  getTextClassByName,
+  getCategoryClassByName
+} from '../constants/categories'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
+import LoginModal from '../components/LoginModal.vue'
 
-const CATEGORY_TEXT_CLASS_MAP: Record<string, string> = {
-  'General': 'has-text-white',
-  'Artist': 'has-text-danger',
-  'Character': 'has-text-success',
-  'Source': 'has-text-warning',
-  'Personal List': 'has-text-info'
-}
-
-const CATEGORY_NAME_CLASS_MAP: Record<string, string> = {
-  'General': 'is-white',
-  'Artist': 'is-danger',
-  'Character': 'is-success',
-  'Source': 'is-warning',
-  'Personal List': 'is-info'
-}
 
 interface DisplayTag extends Tag {
   category_name: string
@@ -30,6 +21,12 @@ interface DisplayTag extends Tag {
 const api = useApi()
 const store = useGalleryStore()
 const router = useRouter()
+
+const authenticated = ref(hasAuthToken())
+
+function onAuthenticated() {
+  authenticated.value = true
+}
 
 const allDisplayTags = ref<DisplayTag[]>([])
 const loading = ref(false)
@@ -47,6 +44,41 @@ const formCategoryId = ref<number | string>('')
 const formEditId = ref<number | null>(null)
 const formHelp = ref('')
 const formHelpClass = ref('')
+
+// Migrate modal state
+const showMigrateModal = ref(false)
+const migrateSourceTag = ref<DisplayTag | null>(null)
+const migrateTargetSearch = ref('')
+const migrateTargetId = ref<number | null>(null)
+const migrateHelp = ref('')
+const migrateHelpClass = ref('')
+const migrateLoading = ref(false)
+
+// Delete modal state
+const showDeleteModal = ref(false)
+const deleteTargetTag = ref<DisplayTag | null>(null)
+const deleteMigrateFirst = ref(false)
+const deleteMigrateTargetSearch = ref('')
+const deleteMigrateTargetId = ref<number | null>(null)
+const deleteHelp = ref('')
+const deleteHelpClass = ref('')
+const deleteLoading = ref(false)
+
+const migrateTargetOptions = computed(() => {
+  if (!migrateTargetSearch.value.trim()) return []
+  const q = migrateTargetSearch.value.toLowerCase()
+  return allDisplayTags.value
+    .filter(t => t.tag_id !== migrateSourceTag.value?.tag_id && t.tag_name.toLowerCase().includes(q))
+    .slice(0, 10)
+})
+
+const deleteMigrateTargetOptions = computed(() => {
+  if (!deleteMigrateTargetSearch.value.trim()) return []
+  const q = deleteMigrateTargetSearch.value.toLowerCase()
+  return allDisplayTags.value
+    .filter(t => t.tag_id !== deleteTargetTag.value?.tag_id && t.tag_name.toLowerCase().includes(q))
+    .slice(0, 10)
+})
 
 const filteredTags = computed(() => {
   let filtered = allDisplayTags.value
@@ -95,8 +127,8 @@ function sortIcon(key: string) {
   return sortAsc.value ? 'fa-sort-up' : 'fa-sort-down'
 }
 
-async function loadTags() {
-  loading.value = true
+async function loadTags(showSpinner = true) {
+  if (showSpinner) loading.value = true
   try {
     allDisplayTags.value = await api.get<DisplayTag[]>('/tags/display/')
   } catch {
@@ -170,7 +202,7 @@ async function submitForm() {
       })
     }
     closeModal()
-    await loadTags()
+    await loadTags(false)
     store.refreshTags()
   } catch {
     formHelp.value = 'Error saving tag.'
@@ -187,20 +219,116 @@ function searchByTag(tagName: string, mediaType: 'images' | 'videos') {
 
 function onTagNameInput() {
   if (formMode.value === 'edit') return
-  if (!formTagName.value.trim()) {
-    formHelp.value = ''
-    formHelpClass.value = ''
+  // Debounce: clear any pending timer and start a new one
+  clearTimeout(tagNameDebounceTimer)
+  tagNameDebounceTimer = window.setTimeout(() => {
+    if (!formTagName.value.trim()) {
+      formHelp.value = ''
+      formHelpClass.value = ''
+      return
+    }
+    const exists = allDisplayTags.value.some(
+      t => t.tag_name.toLowerCase() === formTagName.value.trim().toLowerCase()
+    )
+    if (exists) {
+      formHelp.value = 'Tag already exists.'
+      formHelpClass.value = 'is-danger'
+    } else {
+      formHelp.value = 'Tag is available.'
+      formHelpClass.value = 'is-success'
+    }
+  }, 150)
+}
+
+// Debounce timer handle
+let tagNameDebounceTimer: number = 0
+
+function openMigrateModal(tag: DisplayTag) {
+  migrateSourceTag.value = tag
+  migrateTargetSearch.value = ''
+  migrateTargetId.value = null
+  migrateHelp.value = ''
+  migrateHelpClass.value = ''
+  showMigrateModal.value = true
+}
+
+function closeMigrateModal() {
+  showMigrateModal.value = false
+  migrateSourceTag.value = null
+}
+
+function selectMigrateTarget(tag: DisplayTag) {
+  migrateTargetId.value = tag.tag_id
+  migrateTargetSearch.value = tag.tag_name
+}
+
+async function submitMigrate() {
+  if (!migrateTargetId.value || !migrateSourceTag.value) {
+    migrateHelp.value = 'Please select a target tag.'
+    migrateHelpClass.value = 'is-danger'
     return
   }
-  const exists = allDisplayTags.value.some(
-    t => t.tag_name.toLowerCase() === formTagName.value.trim().toLowerCase()
-  )
-  if (exists) {
-    formHelp.value = 'Tag already exists.'
-    formHelpClass.value = 'is-danger'
-  } else {
-    formHelp.value = 'Tag is available.'
-    formHelpClass.value = 'is-success'
+
+  migrateLoading.value = true
+  try {
+    await api.post('/tags/migrate/', {
+      source_tag_id: migrateSourceTag.value.tag_id,
+      target_tag_id: migrateTargetId.value
+    })
+    closeMigrateModal()
+    await loadTags(false)
+    store.refreshTags()
+  } catch {
+    migrateHelp.value = 'Error migrating tag.'
+    migrateHelpClass.value = 'is-danger'
+  } finally {
+    migrateLoading.value = false
+  }
+}
+
+function openDeleteModal(tag: DisplayTag) {
+  deleteTargetTag.value = tag
+  deleteMigrateFirst.value = false
+  deleteMigrateTargetSearch.value = ''
+  deleteMigrateTargetId.value = null
+  deleteHelp.value = ''
+  deleteHelpClass.value = ''
+  showDeleteModal.value = true
+}
+
+function closeDeleteModal() {
+  showDeleteModal.value = false
+  deleteTargetTag.value = null
+}
+
+function selectDeleteMigrateTarget(tag: DisplayTag) {
+  deleteMigrateTargetId.value = tag.tag_id
+  deleteMigrateTargetSearch.value = tag.tag_name
+}
+
+async function submitDelete() {
+  if (!deleteTargetTag.value) return
+
+  if (deleteMigrateFirst.value && !deleteMigrateTargetId.value) {
+    deleteHelp.value = 'Please select a tag to migrate to, or uncheck the migrate option.'
+    deleteHelpClass.value = 'is-danger'
+    return
+  }
+
+  deleteLoading.value = true
+  try {
+    await api.del('/tags/delete/', {
+      tag_id: deleteTargetTag.value.tag_id,
+      migrate_to_tag_id: deleteMigrateFirst.value ? deleteMigrateTargetId.value : 0
+    })
+    closeDeleteModal()
+    await loadTags(false)
+    store.refreshTags()
+  } catch {
+    deleteHelp.value = 'Error deleting tag.'
+    deleteHelpClass.value = 'is-danger'
+  } finally {
+    deleteLoading.value = false
   }
 }
 
@@ -214,6 +342,9 @@ onMounted(() => {
     <div class="container">
       <LoadingSpinner v-if="loading" />
       <template v-else>
+        <!-- Login prompt (inline, not blocking) -->
+        <LoginModal v-if="!authenticated" @authenticated="onAuthenticated" />
+
         <!-- Header with New Tag button -->
         <div class="level mb-4">
           <div class="level-left">
@@ -221,7 +352,7 @@ onMounted(() => {
               <h1 class="title is-4">Tags</h1>
             </div>
           </div>
-          <div class="level-right">
+          <div class="level-right" v-if="authenticated">
             <div class="level-item">
               <button class="button is-primary" @click="openNewTagModal">
                 <span class="icon"><i class="fa-solid fa-plus"></i></span>
@@ -264,18 +395,18 @@ onMounted(() => {
               <th @click="toggleSort('video_count')" style="cursor:pointer">
                 Videos <i class="fas" :class="sortIcon('video_count')"></i>
               </th>
+              <th v-if="authenticated">Actions</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="tag in pagedTags" :key="tag.tag_id" @dblclick="editTag(tag)" style="cursor:pointer"
-              title="Double-click to edit">
+            <tr v-for="tag in pagedTags" :key="tag.tag_id">
               <td>
-                <span :class="CATEGORY_TEXT_CLASS_MAP[tag.category_name] || 'has-text-white'">
+                <span :class="getTextClassByName(tag.category_name)">
                   {{ tag.tag_name }}
                 </span>
               </td>
               <td>
-                <span class="tag is-medium" :class="CATEGORY_NAME_CLASS_MAP[tag.category_name] || 'is-white'">
+                <span class="tag is-medium" :class="getCategoryClassByName(tag.category_name)">
                   {{ tag.category_name }}
                 </span>
               </td>
@@ -291,9 +422,22 @@ onMounted(() => {
                 </a>
                 <span v-else>0</span>
               </td>
+              <td v-if="authenticated">
+                <div class="buttons are-small">
+                  <button class="button is-info is-outlined" @click="editTag(tag)" title="Edit">
+                    <span class="icon"><i class="fa-solid fa-pen"></i></span>
+                  </button>
+                  <button class="button is-warning is-outlined" @click="openMigrateModal(tag)" title="Migrate">
+                    <span class="icon"><i class="fa-solid fa-arrow-right-arrow-left"></i></span>
+                  </button>
+                  <button class="button is-danger is-outlined" @click="openDeleteModal(tag)" title="Delete">
+                    <span class="icon"><i class="fa-solid fa-trash"></i></span>
+                  </button>
+                </div>
+              </td>
             </tr>
             <tr v-if="pagedTags.length === 0">
-              <td colspan="4" class="has-text-centered">No tags found.</td>
+              <td :colspan="authenticated ? 5 : 4" class="has-text-centered">No tags found.</td>
             </tr>
           </tbody>
         </table>
@@ -338,11 +482,7 @@ onMounted(() => {
                 <div class="select is-fullwidth">
                   <select v-model="formCategoryId">
                     <option value="">Select a Category</option>
-                    <option :value="1">General</option>
-                    <option :value="2">Artist</option>
-                    <option :value="3">Character</option>
-                    <option :value="4">Source</option>
-                    <option :value="5">Personal</option>
+                    <option v-for="cat in TAG_CATEGORIES" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
                   </select>
                 </div>
               </div>
@@ -358,6 +498,116 @@ onMounted(() => {
           </footer>
         </div>
       </div>
+
+      <!-- Migrate Tag Modal -->
+      <div class="modal" :class="{ 'is-active': showMigrateModal }">
+        <div class="modal-background" @click="closeMigrateModal"></div>
+        <div class="modal-card">
+          <header class="modal-card-head">
+            <p class="modal-card-title"><strong>Migrate Tag</strong></p>
+            <button class="delete" aria-label="close" @click="closeMigrateModal"></button>
+          </header>
+          <section class="modal-card-body">
+            <p class="mb-4">
+              Migrate all items tagged with
+              <strong>{{ migrateSourceTag?.tag_name }}</strong>
+              to another tag. Items that already have the target tag will simply have the source tag removed.
+            </p>
+            <div class="field">
+              <label class="label">Target Tag</label>
+              <div class="control">
+                <input class="input" type="text" v-model="migrateTargetSearch"
+                  placeholder="Search for target tag..." />
+              </div>
+              <div v-if="migrateTargetOptions.length > 0" class="dropdown-list">
+                <a v-for="t in migrateTargetOptions" :key="t.tag_id" class="dropdown-item"
+                  :class="{ 'is-active': migrateTargetId === t.tag_id }" @click="selectMigrateTarget(t)">
+                  <span :class="getTextClassByName(t.category_name)">{{ t.tag_name }}</span>
+                  <span class="tag is-small ml-2" :class="getCategoryClassByName(t.category_name)">{{ t.category_name }}</span>
+                </a>
+              </div>
+            </div>
+            <p v-if="migrateHelp" class="help" :class="migrateHelpClass">{{ migrateHelp }}</p>
+          </section>
+          <footer class="modal-card-foot">
+            <div class="buttons">
+              <button class="button is-warning" :class="{ 'is-loading': migrateLoading }" @click="submitMigrate">
+                Migrate
+              </button>
+              <button class="button" @click="closeMigrateModal">Cancel</button>
+            </div>
+          </footer>
+        </div>
+      </div>
+
+      <!-- Delete Tag Modal -->
+      <div class="modal" :class="{ 'is-active': showDeleteModal }">
+        <div class="modal-background" @click="closeDeleteModal"></div>
+        <div class="modal-card">
+          <header class="modal-card-head">
+            <p class="modal-card-title"><strong>Delete Tag</strong></p>
+            <button class="delete" aria-label="close" @click="closeDeleteModal"></button>
+          </header>
+          <section class="modal-card-body">
+            <p class="mb-4">
+              Are you sure you want to delete
+              <strong>{{ deleteTargetTag?.tag_name }}</strong>?
+              This will remove the tag from all items.
+            </p>
+            <div class="field">
+              <label class="checkbox">
+                <input type="checkbox" v-model="deleteMigrateFirst" />
+                Migrate items to another tag before deleting
+              </label>
+            </div>
+            <div v-if="deleteMigrateFirst" class="field">
+              <label class="label">Migrate To</label>
+              <div class="control">
+                <input class="input" type="text" v-model="deleteMigrateTargetSearch"
+                  placeholder="Search for target tag..." />
+              </div>
+              <div v-if="deleteMigrateTargetOptions.length > 0" class="dropdown-list">
+                <a v-for="t in deleteMigrateTargetOptions" :key="t.tag_id" class="dropdown-item"
+                  :class="{ 'is-active': deleteMigrateTargetId === t.tag_id }" @click="selectDeleteMigrateTarget(t)">
+                  <span :class="getTextClassByName(t.category_name)">{{ t.tag_name }}</span>
+                  <span class="tag is-small ml-2" :class="getCategoryClassByName(t.category_name)">{{ t.category_name }}</span>
+                </a>
+              </div>
+            </div>
+            <p v-if="deleteHelp" class="help" :class="deleteHelpClass">{{ deleteHelp }}</p>
+          </section>
+          <footer class="modal-card-foot">
+            <div class="buttons">
+              <button class="button is-danger" :class="{ 'is-loading': deleteLoading }" @click="submitDelete">
+                Delete
+              </button>
+              <button class="button" @click="closeDeleteModal">Cancel</button>
+            </div>
+          </footer>
+        </div>
+      </div>
     </div>
   </section>
 </template>
+
+<style scoped>
+.dropdown-list {
+  border: 1px solid #dbdbdb;
+  border-radius: 4px;
+  max-height: 200px;
+  overflow-y: auto;
+  margin-top: 0.25rem;
+}
+
+.dropdown-item {
+  display: flex;
+  align-items: center;
+  padding: 0.5rem 0.75rem;
+  cursor: pointer;
+}
+
+.dropdown-item:hover,
+.dropdown-item.is-active {
+  background-color: #f5f5f5;
+}
+</style>

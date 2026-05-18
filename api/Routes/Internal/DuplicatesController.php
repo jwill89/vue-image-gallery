@@ -6,6 +6,7 @@ use Psr\Container\ContainerInterface;
 use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
 use Gallery\Collection\ImageCollection;
+use Gallery\Core\DuplicateScanner;
 
 /**
  * DuplicatesController class
@@ -34,14 +35,14 @@ class DuplicatesController extends AbstractController
 
         // Check if directory exists
         if (!is_dir($dupes_dir)) {
-            return $response->withJson(['error' => 'NoDupesDirectory', 'message' => 'No duplicates directory found.'], 404);
+            return $this->error($response, 'NoDupesDirectory', 404);
         }
 
         // Find all dupes JSON files
         $files = glob($dupes_dir . 'dupes-*.json');
 
         if (empty($files)) {
-            return $response->withJson(['error' => 'NoReportsFound', 'message' => 'No duplicate reports found. Run a scan first.'], 404);
+            return $this->error($response, 'NoReportsFound', 404);
         }
 
         // Sort by modification time descending to get the latest
@@ -53,7 +54,7 @@ class DuplicatesController extends AbstractController
         $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
 
         if ($data === null) {
-            return $response->withJson(['error' => 'InvalidReport', 'message' => 'Could not parse report file.'], 500);
+            return $this->error($response, 'InvalidReport', 500);
         }
 
         // Enrich the matches with image data (filenames for thumbnails)
@@ -101,42 +102,32 @@ class DuplicatesController extends AbstractController
             'matches' => $enriched_matches,
         ];
 
-        return $response->withJson($result, 200);
+        return $this->success($response, $result);
     }
 
     /**
-     * runScan - Executes the dupes.php script and returns the result.
+     * runScan - Executes the duplicate scanner directly and returns the result.
      */
     public function runScan(Request $request, Response $response, array $args): Response
     {
         $this->logger->info('Duplicate scan initiated');
-        $dupes_script = dirname(__DIR__, 3) . '/dupes.php';
 
-        if (!$dupes_script || !file_exists($dupes_script)) {
-            return $response->withJson(['error' => 'ScriptNotFound', 'message' => 'dupes.php not found.'], 500);
+        try {
+            $scanner = new DuplicateScanner();
+            $result = $scanner->run();
+
+            $this->logger->info('Duplicate scan completed', $result);
+            return $this->success($response, [
+                'success' => true,
+                'message' => 'Scan completed successfully.',
+                'images_compared' => $result['images_compared'],
+                'duplicates_found' => $result['duplicates_found'],
+                'execution_time' => $result['execution_time_seconds'],
+            ]);
+        } catch (\Throwable $e) {
+            $this->logger->error('Duplicate scan failed', ['error' => $e->getMessage()]);
+            return $this->error($response, 'ScanFailed', 500);
         }
-
-        // Execute the script in the project root directory
-        $project_root = dirname(__DIR__, 3) . '/';
-        $command = sprintf('cd %s && php dupes.php 2>&1', escapeshellarg($project_root));
-
-        $output = [];
-        $return_code = 0;
-        exec($command, $output, $return_code);
-
-        if ($return_code !== 0) {
-            return $response->withJson([
-                'error' => 'ScanFailed',
-                'message' => 'Duplicate scan failed.',
-                'output' => implode("\n", $output),
-            ], 500);
-        }
-
-        return $response->withJson([
-            'success' => true,
-            'message' => 'Scan completed successfully.',
-            'output' => implode("\n", $output),
-        ], 200);
     }
 
     /**
@@ -149,7 +140,7 @@ class DuplicatesController extends AbstractController
         $image_ids = $params['image_ids'] ?? [];
 
         if (empty($image_ids) || !is_array($image_ids)) {
-            return $response->withJson(['error' => 'InvalidInput', 'message' => 'Provide an array of image_ids.'], 400);
+            return $this->error($response, 'InvalidInput', 400);
         }
 
         $this->logger->info('Delete images requested', ['image_ids' => $image_ids]);
@@ -176,10 +167,10 @@ class DuplicatesController extends AbstractController
             }
         }
 
-        return $response->withJson([
+        return $this->success($response, [
             'deleted' => $deleted,
             'failed' => $failed,
             'total_deleted' => count($deleted),
-        ], 200);
+        ]);
     }
 }

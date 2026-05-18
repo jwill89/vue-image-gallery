@@ -13,7 +13,6 @@ use Routes\Internal\DuplicatesController;
 use Routes\Internal\ImageController;
 use Routes\Internal\VideoController;
 use Routes\Internal\TagController;
-use Routes\Internal\PageController;
 use Gallery\Core\Configuration;
 use Gallery\Core\Logger;
 use Gallery\Core\RateLimiter;
@@ -36,6 +35,62 @@ $app->addRoutingMiddleware();
 
 // Setup Error Middleware (disable detailed errors in production)
 $error_middleware = $app->addErrorMiddleware(false, true, true);
+
+// ============================================================
+// Reusable Auth Token Verification
+// ============================================================
+
+/**
+ * Verify a Bearer token from the Authorization header.
+ * Returns true if valid, false otherwise.
+ */
+function verifyAuthToken(string $authHeader): bool
+{
+    $token = str_starts_with($authHeader, 'Bearer ') ? substr($authHeader, 7) : '';
+
+    if (empty($token)) {
+        return false;
+    }
+
+    $db = \Gallery\Core\DatabaseConnection::getInstance();
+    $stmt = $db->prepare('SELECT 1 FROM auth_tokens WHERE token = :token AND created_at >= :min_time');
+    $stmt->execute([':token' => $token, ':min_time' => time() - 86400]);
+
+    return (bool) $stmt->fetchColumn();
+}
+
+/**
+ * Create an unauthorized JSON response.
+ */
+function unauthorizedResponse(): ResponseInterface
+{
+    $response = new \Slim\Psr7\Response();
+    $response->getBody()->write(json_encode(['error' => 'Unauthorized']));
+    return $response->withStatus(401)->withHeader('Content-Type', 'application/json');
+}
+
+// ============================================================
+// Auth Middleware for State-Changing Operations
+// Protects POST, PUT, PATCH, DELETE on all routes except /auth/login
+// ============================================================
+$authMiddleware = function (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface {
+    $method = strtoupper($request->getMethod());
+    $path = $request->getUri()->getPath();
+
+    // Skip auth for login endpoint and OPTIONS preflight
+    if ($method === 'OPTIONS' || str_ends_with($path, '/auth/login') || str_ends_with($path, '/auth/login/')) {
+        return $handler->handle($request);
+    }
+
+    // Only require auth for state-changing methods
+    if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
+        if (!verifyAuthToken($request->getHeaderLine('Authorization'))) {
+            return unauthorizedResponse();
+        }
+    }
+
+    return $handler->handle($request);
+};
 
 // Rate Limiting Middleware
 $app->add(function (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface {
@@ -65,7 +120,7 @@ $app->add(function (ServerRequestInterface $request, RequestHandlerInterface $ha
     if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
         $origin = $request->getHeaderLine('Origin');
         $referer = $request->getHeaderLine('Referer');
-        $allowedOrigins = Configuration::ALLOWED_ORIGINS;
+        $allowedOrigins = Configuration::getAllowedOrigins();
 
         // Allow requests with no Origin (same-origin, curl, etc.)
         if (!empty($origin) && !in_array($origin, $allowedOrigins, true)) {
@@ -94,11 +149,16 @@ $app->add(function (ServerRequestInterface $request, RequestHandlerInterface $ha
 
 // Setup Allowables and Response Origins
 $app->add(function (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface {
-    $response = $handler->handle($request);
+    // Handle CORS preflight OPTIONS requests before routing
+    if (strtoupper($request->getMethod()) === 'OPTIONS') {
+        $response = new \Slim\Psr7\Response();
+    } else {
+        $response = $handler->handle($request);
+    }
 
-    // Determine allowed origin (restrict to same origin in production)
+    // Determine allowed origin
     $origin = $request->getHeaderLine('Origin');
-    $allowed_origins = Configuration::ALLOWED_ORIGINS;
+    $allowed_origins = Configuration::getAllowedOrigins();
 
     // Add security headers always
     $response = $response
@@ -111,64 +171,74 @@ $app->add(function (ServerRequestInterface $request, RequestHandlerInterface $ha
             ->withHeader('Access-Control-Allow-Credentials', 'true')
             ->withHeader('Access-Control-Allow-Origin', $origin)
             ->withHeader('Access-Control-Allow-Headers', 'X-Requested-With, Content-Type, Accept, Origin, Authorization')
-            ->withHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE');
+            ->withHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS')
+            ->withHeader('Access-Control-Max-Age', '86400');
     }
 
     return $response;
 });
 
+// ============================================================
+// CORS Preflight OPTIONS Handler (catch-all)
+// ============================================================
+$app->options('/{routes:.+}', function (ServerRequestInterface $request, ResponseInterface $response) {
+    return $response->withStatus(204);
+});
+
+// ============================================================
 // Image Controllers
+// ============================================================
 $app->group('/images', function (RouteCollectorProxy $group) {
-    $group->get('/page/{page}[/[{items_per_page}[/]]]', ImageController::class . ':getImagesForPage');
-    $group->get('/with-tags/{tag_list}/{page}[/[{items_per_page}[/]]]', ImageController::class . ':getImagesWithTags');
-    $group->get('/total[/]', ImageController::class . ':getTotalImages');
-    $group->get('/[{image_id}[/]]', ImageController::class . ':getImage');
+    $group->get('/page/{page}[/[{items_per_page}[/]]]', ImageController::class . ':getItemsForPage');
+    $group->get('/with-tags/{tag_list}/{page}[/[{items_per_page}[/]]]', ImageController::class . ':getItemsWithTags');
+    $group->get('/total[/]', ImageController::class . ':getTotal');
+    $group->get('/[{image_id}[/]]', ImageController::class . ':getItem');
 });
 
+// ============================================================
 // Video Controllers
+// ============================================================
 $app->group('/videos', function (RouteCollectorProxy $group) {
-    $group->get('/page/{page}[/[{items_per_page}[/]]]', VideoController::class . ':getVideosForPage');
-    $group->get('/with-tags/{tag_list}/{page}[/[{items_per_page}[/]]]', VideoController::class . ':getVideosWithTags');
-    $group->get('/total[/]', VideoController::class . ':getTotalVideos');
-    $group->get('/[{video_id}[/]]', VideoController::class . ':getVideo');
+    $group->get('/page/{page}[/[{items_per_page}[/]]]', VideoController::class . ':getItemsForPage');
+    $group->get('/with-tags/{tag_list}/{page}[/[{items_per_page}[/]]]', VideoController::class . ':getItemsWithTags');
+    $group->get('/total[/]', VideoController::class . ':getTotal');
+    $group->get('/[{video_id}[/]]', VideoController::class . ':getItem');
 });
 
-// Tag Controllers
+// ============================================================
+// Tag Controllers (state-changing operations protected by auth middleware)
+// ============================================================
 $app->group('/tags', function (RouteCollectorProxy $group) {
     $group->get('/all[/]', TagController::class . ':getAllTags');
     $group->get('/display[/]', TagController::class . ':getTagListForDisplay');
-    $group->post('/add[/]', TagController::class . ':addTag');
-    $group->put('/edit/{tag_id}[/]', TagController::class . ':editTag');
     $group->get('/tag/{tag_id}[/]', TagController::class . ':getTag');
     $group->get('/for/image/{image_id}[/]', TagController::class . ':getTagsForImage');
     $group->get('/for/video/{video_id}[/]', TagController::class . ':getTagsForVideo');
+    // Protected: state-changing tag operations
+    $group->post('/add[/]', TagController::class . ':addTag');
+    $group->put('/edit/{tag_id}[/]', TagController::class . ':editTag');
     $group->patch('/image/add[/]', TagController::class . ':addTagsToImage');
     $group->patch('/image/remove[/]', TagController::class . ':removeTagFromImage');
     $group->patch('/video/add[/]', TagController::class . ':addTagsToVideo');
     $group->patch('/video/remove[/]', TagController::class . ':removeTagFromVideo');
-});
+    $group->post('/migrate[/]', TagController::class . ':migrateTag');
+    $group->delete('/delete[/]', TagController::class . ':deleteTag');
+})->add($authMiddleware);
 
-// Page Controllers
-$app->group('/pages', function (RouteCollectorProxy $group) {
-    $group->get('/images[/[{items_per_page}[/]]]', PageController::class . ':getTotalImagePages');
-    $group->get('/images/with-tags/{tag_list}[/[{items_per_page}[/]]]', PageController::class . ':getTotalImagePagesWithTags');
-    $group->get('/videos[/[{items_per_page}[/]]]', PageController::class . ':getTotalVideoPages');
-    $group->get('/videos/with-tags/{tag_list}[/[{items_per_page}[/]]]', PageController::class . ':getTotalVideoPagesWithTags');
-});
-
-
-// Authentication endpoint
+// ============================================================
+// Authentication Endpoint
+// ============================================================
 $app->post('/auth/login[/]', function (ServerRequestInterface $request, ResponseInterface $response) {
     $params = json_decode((string)$request->getBody(), true) ?? [];
     $password = $params['password'] ?? '';
 
-    if ($password === Configuration::ADMIN_PASSWORD) {
+    if ($password === Configuration::getAdminPassword()) {
         $token = bin2hex(random_bytes(32));
-        // Store token in session-like mechanism using a file (simple approach for SQLite-based app)
         $db = \Gallery\Core\DatabaseConnection::getInstance();
-        $db->exec('CREATE TABLE IF NOT EXISTS auth_tokens (token TEXT PRIMARY KEY, created_at INTEGER NOT NULL)');
+
         // Clean expired tokens (older than 24 hours)
         $db->exec('DELETE FROM auth_tokens WHERE created_at < ' . (time() - 86400));
+
         $stmt = $db->prepare('INSERT INTO auth_tokens (token, created_at) VALUES (:token, :time)');
         $stmt->execute([':token' => $token, ':time' => time()]);
 
@@ -182,35 +252,14 @@ $app->post('/auth/login[/]', function (ServerRequestInterface $request, Response
     return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
 });
 
-// Duplicates Controllers (protected by auth)
+// ============================================================
+// Duplicates Controllers (protected by auth middleware)
+// ============================================================
 $app->group('/duplicates', function (RouteCollectorProxy $group) {
     $group->get('/report[/]', DuplicatesController::class . ':getLatestReport');
     $group->post('/scan[/]', DuplicatesController::class . ':runScan');
     $group->delete('/images[/]', DuplicatesController::class . ':deleteImages');
-})->add(function (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface {
-    // Auth middleware for duplicates group
-    $authHeader = $request->getHeaderLine('Authorization');
-    $token = str_starts_with($authHeader, 'Bearer ') ? substr($authHeader, 7) : '';
-
-    if (empty($token)) {
-        $response = new \Slim\Psr7\Response();
-        $response->getBody()->write(json_encode(['error' => 'Unauthorized']));
-        return $response->withStatus(401)->withHeader('Content-Type', 'application/json');
-    }
-
-    $db = \Gallery\Core\DatabaseConnection::getInstance();
-    $db->exec('CREATE TABLE IF NOT EXISTS auth_tokens (token TEXT PRIMARY KEY, created_at INTEGER NOT NULL)');
-    $stmt = $db->prepare('SELECT 1 FROM auth_tokens WHERE token = :token AND created_at >= :min_time');
-    $stmt->execute([':token' => $token, ':min_time' => time() - 86400]);
-
-    if (!$stmt->fetchColumn()) {
-        $response = new \Slim\Psr7\Response();
-        $response->getBody()->write(json_encode(['error' => 'Unauthorized']));
-        return $response->withStatus(401)->withHeader('Content-Type', 'application/json');
-    }
-
-    return $handler->handle($request);
-});
+})->add($authMiddleware);
 
 // Run the app
 $app->run();

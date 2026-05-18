@@ -60,6 +60,17 @@ class ImageCollection
     }
 
     /**
+     * Gets a lightweight summary of all images (only ID, file_name, and hash).
+     * Used by cron.php for orphan detection and deduplication without loading full objects.
+     *
+     * @return array[] Array of associative arrays with image_id, file_name, and hash.
+     */
+    public function getAllSummary(): array
+    {
+        return $this->storage->retrieveSummary();
+    }
+
+    /**
      * Gets a number of images based on the supplied page number.
      *
      * @param int $page_number The page number to retrieve.

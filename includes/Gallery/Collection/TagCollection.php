@@ -2,7 +2,6 @@
 
 namespace Gallery\Collection;
 
-use OutOfBoundsException;
 use Gallery\Storage\TagStorage;
 use Gallery\Structure\Tag;
 use Gallery\Structure\Image;
@@ -195,14 +194,19 @@ class TagCollection
      */
     public function delete(Tag $tag): bool
     {
-        // Delete the tag from the database
-        $success = $this->storage->delete($tag);
+        return $this->storage->delete($tag);
+    }
 
-        // Delete the tag and thumbnail from the filesystem
-        if (!$success) {
-            throw new OutOfBoundsException('Tag not found in database.');
-        }
-
-        return true;
+    /**
+     * migrateTag function
+     * Migrates all usages of one tag to another.
+     *
+     * @param Tag $sourceTag
+     * @param Tag $targetTag
+     * @return bool
+     */
+    public function migrateTag(Tag $sourceTag, Tag $targetTag): bool
+    {
+        return $this->storage->migrateTag($sourceTag, $targetTag);
     }
 }

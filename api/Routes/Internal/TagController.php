@@ -41,25 +41,25 @@ class TagController extends AbstractController
         $tag_id = $this->parseParameters($args, 'tag_id', null);
 
         if ($tag_id === null) {
-            return $response->withJson(['error' => 'NoTagIDProvided'], 400);
+            return $this->error($response, 'NoTagIDProvided', 400);
         }
 
         if (!is_numeric($tag_id) || $tag_id <= 0) {
-            return $response->withJson(['error' => 'InvalidTagID'], 404);
+            return $this->error($response, 'InvalidTagID', 404);
         }
 
         $data = $this->tag_collection->get((int)$tag_id);
-        return $response->withJson($data, 200);
+        return $this->success($response, $data);
     }
 
     public function getAllTags(Request $request, Response $response, array $args): Response
     {
-        return $response->withJson($this->tag_collection->getAll(), 200);
+        return $this->success($response, $this->tag_collection->getAll());
     }
 
     public function getTagListForDisplay(Request $request, Response $response, array $args): Response
     {
-        return $response->withJson($this->tag_collection->getAllForPage(), 200);
+        return $this->success($response, $this->tag_collection->getAllForPage());
     }
 
     public function addTag(Request $request, Response $response, array $args): Response
@@ -69,16 +69,16 @@ class TagController extends AbstractController
         $tag_category = (int)$this->parseParameters($params, 'category_id', 1);
 
         if (empty($tag_name)) {
-            return $response->withJson(['error' => 'InvalidTagName'], 400);
+            return $this->error($response, 'InvalidTagName', 400);
         }
         if (mb_strlen($tag_name) > self::MAX_TAG_NAME_LENGTH) {
-            return $response->withJson(['error' => 'TagNameTooLong'], 400);
+            return $this->error($response, 'TagNameTooLong', 400);
         }
         if (!in_array($tag_category, self::VALID_CATEGORY_IDS, true)) {
-            return $response->withJson(['error' => 'InvalidCategoryID'], 400);
+            return $this->error($response, 'InvalidCategoryID', 400);
         }
         if ($this->tag_collection->getByName($tag_name) instanceof Tag) {
-            return $response->withJson(['error' => 'TagAlreadyExists'], 400);
+            return $this->error($response, 'TagAlreadyExists', 400);
         }
 
         $tag = new Tag();
@@ -87,11 +87,11 @@ class TagController extends AbstractController
 
         if ($tag_id === 0) {
             $this->logger->error('Failed to create tag', ['tag_name' => $tag_name]);
-            return $response->withJson(['error' => 'CouldNotCreateTag'], 500);
+            return $this->error($response, 'CouldNotCreateTag', 500);
         }
 
         $this->logger->info('Tag created', ['tag_id' => $tag_id, 'tag_name' => $tag_name, 'category_id' => $tag_category]);
-        return $response->withJson(true, 200);
+        return $this->success($response, true);
     }
 
     public function editTag(Request $request, Response $response, array $args): Response
@@ -102,21 +102,21 @@ class TagController extends AbstractController
         $tag_category = (int)$this->parseParameters($params, 'category_id', 1);
 
         if ($tag_id <= 0) {
-            return $response->withJson(['error' => 'InvalidTagID'], 400);
+            return $this->error($response, 'InvalidTagID', 400);
         }
         if (empty($tag_name)) {
-            return $response->withJson(['error' => 'InvalidTagName'], 400);
+            return $this->error($response, 'InvalidTagName', 400);
         }
         if (mb_strlen($tag_name) > self::MAX_TAG_NAME_LENGTH) {
-            return $response->withJson(['error' => 'TagNameTooLong'], 400);
+            return $this->error($response, 'TagNameTooLong', 400);
         }
         if (!in_array($tag_category, self::VALID_CATEGORY_IDS, true)) {
-            return $response->withJson(['error' => 'InvalidCategoryID'], 400);
+            return $this->error($response, 'InvalidCategoryID', 400);
         }
 
         $tag = $this->tag_collection->get($tag_id);
         if (!($tag instanceof Tag)) {
-            return $response->withJson(['error' => 'TagDoesNotExist'], 404);
+            return $this->error($response, 'TagDoesNotExist', 404);
         }
 
         $tag->setTagName($tag_name)->setCategoryId($tag_category);
@@ -124,11 +124,11 @@ class TagController extends AbstractController
 
         if ($saved_id === 0) {
             $this->logger->error('Failed to save tag edit', ['tag_id' => $tag_id]);
-            return $response->withJson(['error' => 'CouldNotSaveTag'], 500);
+            return $this->error($response, 'CouldNotSaveTag', 500);
         }
 
         $this->logger->info('Tag edited', ['tag_id' => $tag_id, 'tag_name' => $tag_name, 'category_id' => $tag_category]);
-        return $response->withJson(true, 200);
+        return $this->success($response, true);
     }
 
     public function getTagsForImage(Request $request, Response $response, array $args): Response
@@ -161,6 +161,81 @@ class TagController extends AbstractController
         return $this->removeTagFromMedia('video', $request, $response);
     }
 
+    public function migrateTag(Request $request, Response $response, array $args): Response
+    {
+        $params = $request->getParsedBody();
+        $source_id = (int)$this->parseParameters($params, 'source_tag_id', 0);
+        $target_id = (int)$this->parseParameters($params, 'target_tag_id', 0);
+
+        if ($source_id <= 0 || $target_id <= 0) {
+            return $this->error($response, 'InvalidTagID', 400);
+        }
+
+        if ($source_id === $target_id) {
+            return $this->error($response, 'CannotMigrateToSelf', 400);
+        }
+
+        $sourceTag = $this->tag_collection->get($source_id);
+        $targetTag = $this->tag_collection->get($target_id);
+
+        if (!($sourceTag instanceof Tag) || !($targetTag instanceof Tag)) {
+            return $this->error($response, 'TagDoesNotExist', 404);
+        }
+
+        $success = $this->tag_collection->migrateTag($sourceTag, $targetTag);
+
+        if (!$success) {
+            $this->logger->error('Failed to migrate tag', ['source' => $source_id, 'target' => $target_id]);
+            return $this->error($response, 'CouldNotMigrateTag', 500);
+        }
+
+        $this->logger->info('Tag migrated', ['source' => $source_id, 'target' => $target_id]);
+        return $this->success($response, true);
+    }
+
+    public function deleteTag(Request $request, Response $response, array $args): Response
+    {
+        $params = $request->getParsedBody();
+        $tag_id = (int)$this->parseParameters($params, 'tag_id', 0);
+        $migrate_to_id = (int)$this->parseParameters($params, 'migrate_to_tag_id', 0);
+
+        if ($tag_id <= 0) {
+            return $this->error($response, 'InvalidTagID', 400);
+        }
+
+        $tag = $this->tag_collection->get($tag_id);
+        if (!($tag instanceof Tag)) {
+            return $this->error($response, 'TagDoesNotExist', 404);
+        }
+
+        // If migration target is specified, migrate first
+        if ($migrate_to_id > 0) {
+            if ($migrate_to_id === $tag_id) {
+                return $this->error($response, 'CannotMigrateToSelf', 400);
+            }
+
+            $targetTag = $this->tag_collection->get($migrate_to_id);
+            if (!($targetTag instanceof Tag)) {
+                return $this->error($response, 'MigrationTargetDoesNotExist', 404);
+            }
+
+            $migrated = $this->tag_collection->migrateTag($tag, $targetTag);
+            if (!$migrated) {
+                $this->logger->error('Failed to migrate before delete', ['tag_id' => $tag_id, 'target' => $migrate_to_id]);
+                return $this->error($response, 'CouldNotMigrateTag', 500);
+            }
+        }
+
+        $deleted = $this->tag_collection->delete($tag);
+        if (!$deleted) {
+            $this->logger->error('Failed to delete tag', ['tag_id' => $tag_id]);
+            return $this->error($response, 'CouldNotDeleteTag', 500);
+        }
+
+        $this->logger->info('Tag deleted', ['tag_id' => $tag_id, 'migrated_to' => $migrate_to_id]);
+        return $this->success($response, true);
+    }
+
     // ========================================================================
     // Private helper methods
     // ========================================================================
@@ -171,7 +246,7 @@ class TagController extends AbstractController
         $media_id = $this->parseParameters($args, $id_key, 0);
 
         if (!is_numeric($media_id) || $media_id <= 0) {
-            return $response->withJson(['error' => 'Invalid' . ucfirst($type) . 'ID'], 400);
+            return $this->error($response, 'Invalid' . ucfirst($type) . 'ID', 400);
         }
 
         $media = ($type === 'image')
@@ -179,24 +254,24 @@ class TagController extends AbstractController
             : $this->video_collection->get((int)$media_id);
 
         if ($media === null) {
-            return $response->withJson(['error' => ucfirst($type) . 'DoesNotExist'], 404);
+            return $this->error($response, ucfirst($type) . 'DoesNotExist', 404);
         }
 
         $tags = ($type === 'image')
             ? $this->tag_collection->getTagsForImage($media)
             : $this->tag_collection->getTagsForVideo($media);
 
-        return $response->withJson($tags, 200);
+        return $this->success($response, $tags);
     }
 
     private function addTagsToMedia(string $type, Request $request, Response $response): Response
     {
         $params = $request->getParsedBody();
         $media_id = (int)$this->parseParameters($params, 'item_id', 0);
-        $tag_list = array_unique(array_map('trim', explode(',', $this->parseParameters($params, 'tag_list', ''))));
+        $tag_ids_raw = $this->parseParameters($params, 'tag_ids', []);
 
         if ($media_id <= 0) {
-            return $response->withJson(['error' => 'Invalid' . ucfirst($type) . 'ID'], 400);
+            return $this->error($response, 'Invalid' . ucfirst($type) . 'ID', 400);
         }
 
         $media = ($type === 'image')
@@ -204,21 +279,22 @@ class TagController extends AbstractController
             : $this->video_collection->get($media_id);
 
         if ($media === null) {
-            return $response->withJson(['error' => ucfirst($type) . 'DoesNotExist'], 404);
+            return $this->error($response, ucfirst($type) . 'DoesNotExist', 404);
         }
 
-        if (empty($tag_list) || (count($tag_list) === 1 && $tag_list[0] === '')) {
-            return $response->withJson(['error' => 'InvalidTagList'], 400);
+        // Accept an array of tag IDs (tags must already exist)
+        $tag_ids = array_filter(array_map('intval', (array)$tag_ids_raw), fn($id) => $id > 0);
+
+        if (empty($tag_ids)) {
+            return $this->error($response, 'InvalidTagList', 400);
         }
 
-        // Get or create tags and collect IDs
-        $tag_ids = [];
-        foreach ($tag_list as $tag_name) {
-            if (empty($tag_name)) {
-                continue;
+        // Verify all tags exist
+        foreach ($tag_ids as $tid) {
+            $tag = $this->tag_collection->get($tid);
+            if (!($tag instanceof Tag)) {
+                return $this->error($response, 'TagDoesNotExist', 404);
             }
-            $tag = $this->tag_collection->getOrCreate($tag_name);
-            $tag_ids[] = $tag->getTagId();
         }
 
         // Add tags
@@ -228,7 +304,7 @@ class TagController extends AbstractController
 
         if (!$success) {
             $this->logger->error("Failed to add tags to $type", ['media_id' => $media_id, 'tag_ids' => $tag_ids]);
-            return $response->withJson(['error' => 'CouldNotAddAllTagsTo' . ucfirst($type)], 500);
+            return $this->error($response, 'CouldNotAddAllTagsTo' . ucfirst($type), 500);
         }
 
         $this->logger->info("Tags added to $type", ['media_id' => $media_id, 'tag_ids' => $tag_ids]);
@@ -238,7 +314,7 @@ class TagController extends AbstractController
             ? $this->tag_collection->getTagsForImage($media)
             : $this->tag_collection->getTagsForVideo($media);
 
-        return $response->withJson($data, 200);
+        return $this->success($response, $data);
     }
 
     private function removeTagFromMedia(string $type, Request $request, Response $response): Response
@@ -248,7 +324,7 @@ class TagController extends AbstractController
         $tag_id = (int)$this->parseParameters($params, 'tag_id', 0);
 
         if ($media_id <= 0) {
-            return $response->withJson(['error' => 'Invalid' . ucfirst($type) . 'ID'], 400);
+            return $this->error($response, 'Invalid' . ucfirst($type) . 'ID', 400);
         }
 
         $media = ($type === 'image')
@@ -256,16 +332,16 @@ class TagController extends AbstractController
             : $this->video_collection->get($media_id);
 
         if ($media === null) {
-            return $response->withJson(['error' => ucfirst($type) . 'DoesNotExist'], 404);
+            return $this->error($response, ucfirst($type) . 'DoesNotExist', 404);
         }
 
         if ($tag_id <= 0) {
-            return $response->withJson(['error' => 'InvalidTagID'], 400);
+            return $this->error($response, 'InvalidTagID', 400);
         }
 
         $tag = $this->tag_collection->get($tag_id);
         if (!($tag instanceof Tag)) {
-            return $response->withJson(['error' => 'CouldNotFindTag'], 404);
+            return $this->error($response, 'CouldNotFindTag', 404);
         }
 
         $removed = ($type === 'image')
@@ -274,7 +350,7 @@ class TagController extends AbstractController
 
         if (!$removed) {
             $this->logger->error("Failed to remove tag from $type", ['media_id' => $media_id, 'tag_id' => $tag_id]);
-            return $response->withJson(['error' => 'CouldNotRemoveTagFrom' . ucfirst($type)], 500);
+            return $this->error($response, 'CouldNotRemoveTagFrom' . ucfirst($type), 500);
         }
 
         $this->logger->info("Tag removed from $type", ['media_id' => $media_id, 'tag_id' => $tag_id]);
@@ -284,7 +360,7 @@ class TagController extends AbstractController
             ? $this->tag_collection->getTagsForImage($media)
             : $this->tag_collection->getTagsForVideo($media);
 
-        return $response->withJson($data, 200);
+        return $this->success($response, $data);
     }
 
     /**

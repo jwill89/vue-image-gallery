@@ -117,9 +117,8 @@ class TagCategoryStorage
             $stmt->bindValue(':category_name', $category->getCategoryName(), PDO::PARAM_STR);
             $stmt->bindValue(':category_short', $category->getCategoryShort(), PDO::PARAM_STR);
 
-            if ($stmt->execute()) {
-                $category->setCategoryId((int)$this->db->lastInsertId());
-            }
+            $stmt->execute();
+            $category->setCategoryId((int)$this->db->lastInsertId());
         }
 
         return $category->getCategoryId();

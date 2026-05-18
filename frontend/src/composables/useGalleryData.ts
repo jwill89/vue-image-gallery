@@ -2,6 +2,15 @@ import { ref } from 'vue'
 import { useApi } from './useApi'
 import type { MediaItem } from '../stores/gallery'
 
+/**
+ * Response shape from the paginated media endpoints.
+ * Items + pagination metadata in a single response.
+ */
+interface PaginatedResponse {
+  items: MediaItem[]
+  total_pages: number
+  current_page: number
+}
 
 export function useGalleryData() {
   const api = useApi()
@@ -15,23 +24,15 @@ export function useGalleryData() {
     error.value = null
 
     try {
-      const tagsSegment = tags ? `/with-tags/${encodeURIComponent(tags)}` : ''
-
-      // Fetch items
-      const itemsUrl = tags
+      // Single API call returns items + pagination metadata
+      const url = tags
         ? `/${mediaType}/with-tags/${encodeURIComponent(tags)}/${page}/${perPage}/`
         : `/${mediaType}/page/${page}/${perPage}/`
 
-      // Fetch total pages
-      const pagesUrl = `/pages/${mediaType}${tagsSegment}/${perPage}/`
+      const data = await api.get<PaginatedResponse>(url)
 
-      const [itemsData, pagesData] = await Promise.all([
-        api.get<MediaItem[]>(itemsUrl),
-        api.get<number>(pagesUrl)
-      ])
-
-      items.value = itemsData ?? []
-      totalPages.value = pagesData ?? 1
+      items.value = data?.items ?? []
+      totalPages.value = data?.total_pages ?? 1
     } catch (e: any) {
       error.value = e.message || 'Failed to load gallery'
       items.value = []
@@ -43,4 +44,3 @@ export function useGalleryData() {
 
   return { items, totalPages, loading, error, fetchPage }
 }
-

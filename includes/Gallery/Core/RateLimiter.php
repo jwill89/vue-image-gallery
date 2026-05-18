@@ -38,6 +38,7 @@ class RateLimiter
 
     /**
      * Check if the given IP is within the rate limit. Records the request if allowed.
+     * Uses a transaction to reduce overhead from 3 separate DB operations.
      * Prunes all expired entries globally to prevent unbounded table growth.
      *
      * @return array{allowed: bool, remaining: int, retry_after: int}
@@ -46,28 +47,40 @@ class RateLimiter
     {
         $cutoff = time() - $this->windowSeconds;
 
-        // Prune all expired entries globally (not just this IP)
-        $this->db->prepare('DELETE FROM rate_limits WHERE requested_at < :cutoff')
-            ->execute([':cutoff' => $cutoff]);
+        $this->db->beginTransaction();
 
-        // Count current window for this IP and insert in one transaction
-        $stmt = $this->db->prepare('SELECT COUNT(*) FROM rate_limits WHERE ip = :ip');
-        $stmt->execute([':ip' => $ip]);
-        $count = (int) $stmt->fetchColumn();
+        try {
+            // Prune all expired entries globally (not just this IP)
+            $this->db->prepare('DELETE FROM rate_limits WHERE requested_at < :cutoff')
+                ->execute([':cutoff' => $cutoff]);
 
-        if ($count >= $this->maxRequests) {
-            // Find earliest entry to calculate retry_after
-            $stmt = $this->db->prepare('SELECT MIN(requested_at) FROM rate_limits WHERE ip = :ip');
+            // Count current window for this IP
+            $stmt = $this->db->prepare('SELECT COUNT(*) FROM rate_limits WHERE ip = :ip');
             $stmt->execute([':ip' => $ip]);
-            $earliest = (int) $stmt->fetchColumn();
-            $retryAfter = max(1, ($earliest + $this->windowSeconds) - time());
+            $count = (int) $stmt->fetchColumn();
 
-            return ['allowed' => false, 'remaining' => 0, 'retry_after' => $retryAfter];
+            if ($count >= $this->maxRequests) {
+                $this->db->commit();
+
+                // Find earliest entry to calculate retry_after
+                $stmt = $this->db->prepare('SELECT MIN(requested_at) FROM rate_limits WHERE ip = :ip');
+                $stmt->execute([':ip' => $ip]);
+                $earliest = (int) $stmt->fetchColumn();
+                $retryAfter = max(1, ($earliest + $this->windowSeconds) - time());
+
+                return ['allowed' => false, 'remaining' => 0, 'retry_after' => $retryAfter];
+            }
+
+            // Record this request
+            $this->db->prepare('INSERT INTO rate_limits (ip, requested_at) VALUES (:ip, :time)')
+                ->execute([':ip' => $ip, ':time' => time()]);
+
+            $this->db->commit();
+        } catch (\Throwable $e) {
+            $this->db->rollBack();
+            // On error, allow the request to proceed
+            return ['allowed' => true, 'remaining' => $this->maxRequests, 'retry_after' => 0];
         }
-
-        // Record this request
-        $this->db->prepare('INSERT INTO rate_limits (ip, requested_at) VALUES (:ip, :time)')
-            ->execute([':ip' => $ip, ':time' => time()]);
 
         return ['allowed' => true, 'remaining' => $this->maxRequests - $count - 1, 'retry_after' => 0];
     }

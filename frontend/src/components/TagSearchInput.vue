@@ -1,14 +1,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useGalleryStore, type Tag } from '../stores/gallery'
-
-const CATEGORY_TAG_CLASS_MAP: Record<number, string> = {
-  1: 'is-white',
-  2: 'is-danger',
-  3: 'is-success',
-  4: 'is-warning',
-  5: 'is-info'
-}
+import { getCategoryClassById } from '../constants/categories'
 
 const store = useGalleryStore()
 
@@ -44,9 +37,6 @@ const filteredTags = computed(() => {
 
 const hasSelectedTags = computed(() => props.modelValue.length > 0)
 
-function getCategoryClass(categoryId: number): string {
-  return CATEGORY_TAG_CLASS_MAP[categoryId] || 'is-white'
-}
 
 function getCategoryForTag(tagName: string): number {
   const tag = store.allTags.find(t => t.tag_name.toLowerCase() === tagName.toLowerCase())
@@ -130,7 +120,7 @@ function onResetClick() {
             v-for="tagName in modelValue"
             :key="tagName"
             class="tag"
-            :class="getCategoryClass(getCategoryForTag(tagName))"
+            :class="getCategoryClassById(getCategoryForTag(tagName))"
           >
             {{ tagName }}
             <button class="delete is-small" @click.stop="removeTag(tagName)"></button>
@@ -159,7 +149,7 @@ function onResetClick() {
             :class="{ 'is-highlighted': idx === highlightedIndex }"
             @mousedown.prevent="selectTag(tag)"
           >
-            <span class="tag is-small" :class="getCategoryClass(tag.category_id)">
+            <span class="tag is-small" :class="getCategoryClassById(tag.category_id)">
               {{ tag.tag_name }}
             </span>
           </div>

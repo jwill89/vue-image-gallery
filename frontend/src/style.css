@@ -35,4 +35,40 @@
   justify-content: center;
   align-items: center;
   min-height: 50vh;
+  animation: delayed-fade-in 0.3s ease-in-out both;
+}
+@keyframes delayed-fade-in {
+  0%, 80% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Gallery content: hidden while thumbnails load, fades in when ready */
+.gallery-content {
+  opacity: 0;
+  transition: opacity 0.4s ease-in-out;
+  pointer-events: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+.gallery-content.gallery-visible {
+  opacity: 1;
+  pointer-events: auto;
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
+}
+
+/* Page route transitions */
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+.page-fade-enter-from,
+.page-fade-leave-to {
+  opacity: 0;
 }

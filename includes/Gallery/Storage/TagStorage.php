@@ -369,4 +369,56 @@ class TagStorage
 
         return $stmt->execute();
     }
+
+    /**
+     * Migrate all usages of one tag to another tag, then optionally delete the source tag.
+     * For items that already have the target tag, just remove the source tag.
+     *
+     * @param Tag $sourceTag The tag to migrate from.
+     * @param Tag $targetTag The tag to migrate to.
+     * @return bool
+     */
+    public function migrateTag(Tag $sourceTag, Tag $targetTag): bool
+    {
+        $sourceId = $sourceTag->getTagId();
+        $targetId = $targetTag->getTagId();
+
+        $this->db->beginTransaction();
+
+        try {
+            // Images: add target tag where source exists and target doesn't
+            $sql = "INSERT OR IGNORE INTO " . self::IMAGE_TAG_TABLE . " (image_id, tag_id)
+                    SELECT image_id, :target_id FROM " . self::IMAGE_TAG_TABLE . " WHERE tag_id = :source_id";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':target_id', $targetId, PDO::PARAM_INT);
+            $stmt->bindValue(':source_id', $sourceId, PDO::PARAM_INT);
+            $stmt->execute();
+
+            // Images: remove source tag
+            $sql = "DELETE FROM " . self::IMAGE_TAG_TABLE . " WHERE tag_id = :source_id";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':source_id', $sourceId, PDO::PARAM_INT);
+            $stmt->execute();
+
+            // Videos: add target tag where source exists and target doesn't
+            $sql = "INSERT OR IGNORE INTO " . self::VIDEO_TAG_TABLE . " (video_id, tag_id)
+                    SELECT video_id, :target_id FROM " . self::VIDEO_TAG_TABLE . " WHERE tag_id = :source_id";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':target_id', $targetId, PDO::PARAM_INT);
+            $stmt->bindValue(':source_id', $sourceId, PDO::PARAM_INT);
+            $stmt->execute();
+
+            // Videos: remove source tag
+            $sql = "DELETE FROM " . self::VIDEO_TAG_TABLE . " WHERE tag_id = :source_id";
+            $stmt = $this->db->prepare($sql);
+            $stmt->bindValue(':source_id', $sourceId, PDO::PARAM_INT);
+            $stmt->execute();
+
+            $this->db->commit();
+            return true;
+        } catch (\Exception $e) {
+            $this->db->rollBack();
+            return false;
+        }
+    }
 }
