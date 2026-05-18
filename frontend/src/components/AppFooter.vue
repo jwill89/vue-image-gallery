@@ -8,8 +8,9 @@ const store = useGalleryStore()
   <footer class="footer is-flex-align-items-flex-end mt-auto">
     <div class="content has-text-centered">
       <p>
-        Programmed by <a href="https://www.mathdad.me" target="_blank">MathDad</a>. Utilizes
-        the <a href="https://bulma.io/" target="_blank">Bulma</a> CSS Framework.<br />
+        Programmed by <a href="https://www.mathdad.me" target="_blank">MathDad</a>. Made
+        using <a href="https://bulma.io/" target="_blank">Bulma</a> and
+        <a href="https://vuejs.org">Vue</a>.<br />
         Repository on <a href="https://github.com/jwill89/simple-image-gallery/">GitHub</a>.
         The source code is licensed under the
         <a href="https://opensource.org/licenses/mit-license.php" target="_blank">MIT</a> license.<br />
