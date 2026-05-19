@@ -138,10 +138,26 @@ class ImageCollection
         // Max Width/Height of Thumbnail
         $max_size = 200;
 
-        // Start New Thumbnail
-        $image = new Imagick(self::IMAGE_DIRECTORY . $image_obj->getFileName());
+        $source_path = self::IMAGE_DIRECTORY . $image_obj->getFileName();
+        $ext = strtolower(pathinfo($image_obj->getFileName(), PATHINFO_EXTENSION));
 
-        // If the image is wider
+        // For animated formats (gif, webp), use FFmpeg for reliable first-frame extraction
+        if (in_array($ext, ['gif', 'webp'], true)) {
+            $thumbnail_path = self::IMAGE_DIRECTORY_THUMBNAILS . pathinfo($image_obj->getFileName(), PATHINFO_FILENAME) . '.jpg';
+            $scale = "scale='min({$max_size},iw)':'min({$max_size},ih)':flags=lanczos:force_original_aspect_ratio=decrease,format=yuv420p";
+            $cmd = sprintf(
+                'ffmpeg -i %s -vf "%s" -frames:v 1 -q:v 2 -y %s 2>/dev/null',
+                escapeshellarg($source_path),
+                $scale,
+                escapeshellarg($thumbnail_path)
+            );
+            exec($cmd);
+            return;
+        }
+
+        // For static images, use Imagick (works well for JPEG/PNG)
+        $image = new Imagick($source_path);
+
         if ($image->getImageHeight() <= $image->getImageWidth()) {
             // Resize image using the lanczos resampling algorithm based on width
             $image->resizeImage($max_size, 0, Imagick::FILTER_LANCZOS, 1);
@@ -163,12 +179,7 @@ class ImageCollection
 
         // Start Thumbnail Write
         $image_file_name = pathinfo($image->getImageFilename());
-
-        // Extension fis the same as the original
-        $ext = $image_file_name['extension'];
-
-        // Write Thumbnail
-        $image->writeImage(self::IMAGE_DIRECTORY_THUMBNAILS . $image_file_name['filename'] . '.' . $ext);
+        $image->writeImage(self::IMAGE_DIRECTORY_THUMBNAILS . $image_file_name['filename'] . '.' . $image_file_name['extension']);
 
         $image->clear();
     }

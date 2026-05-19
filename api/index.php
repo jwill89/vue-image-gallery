@@ -84,7 +84,18 @@ $authMiddleware = function (ServerRequestInterface $request, RequestHandlerInter
 
     // Only require auth for state-changing methods
     if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
-        if (!verifyAuthToken($request->getHeaderLine('Authorization'))) {
+        // Allow unauthenticated tag add/remove on media items
+        $path = $request->getUri()->getPath();
+        $publicTagPaths = ['/tags/image/add', '/tags/video/add'];
+        $isPublicTagOp = false;
+        foreach ($publicTagPaths as $p) {
+            if (str_contains($path, $p)) {
+                $isPublicTagOp = true;
+                break;
+            }
+        }
+
+        if (!$isPublicTagOp && !verifyAuthToken($request->getHeaderLine('Authorization'))) {
             return unauthorizedResponse();
         }
     }

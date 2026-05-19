@@ -5,12 +5,10 @@ import { useGalleryStore, type MediaItem } from '../stores/gallery'
 const props = defineProps<{
   item: MediaItem
   mediaType: 'images' | 'videos'
-  index: number
 }>()
 
 const emit = defineEmits<{
-  viewTags: [id: number, url: string, hash: string]
-  zoom: [index: number]
+  click: [id: number]
 }>()
 
 const store = useGalleryStore()
@@ -26,44 +24,61 @@ const thumbnailPath = computed(() => {
   const baseName = props.item.file_name.split('.').slice(0, -1).join('.')
   return `/videos/thumbs/${baseName}.jpg`
 })
-
-const fullPath = computed(() => {
-  if (props.mediaType === 'images') {
-    return `/images/full/${props.item.file_name}`
-  }
-  return `/videos/full/${props.item.file_name}`
-})
-
-function onViewTags() {
-  emit('viewTags', itemId.value, fullPath.value, props.item.hash)
-}
 </script>
 
 <template>
-  <div class="is-flex is-align-self-flex-end">
-    <div class="card child has-border-white">
-      <div class="card-content has-text-centered has-background-grey-darker">
-        <figure class="image">
-          <img :class="['gallery-image', { 'thumb-blur': store.blurThumbnails }]" :src="thumbnailPath" alt="" />
-        </figure>
-      </div>
-      <footer class="card-footer has-background-light">
-        <a class="card-footer-item" @click.prevent="emit('zoom', props.index)">
-          <span class="icon has-text-info-dark">
-            <i class="fa-solid fa-magnifying-glass-plus" title="Zoom In"></i>
-          </span>
-        </a>
-        <a class="card-footer-item" :href="fullPath" target="_blank">
-          <span class="icon has-text-info-dark">
-            <i class="fa-solid fa-up-right-from-square" title="View Full Size in New Tab"></i>
-          </span>
-        </a>
-        <a class="card-footer-item" @click.prevent="onViewTags">
-          <span class="icon has-text-info-dark">
-            <i class="fa-solid fa-tags" title="Add/View Tags"></i>
-          </span>
-        </a>
-      </footer>
+  <div class="gallery-card" @click="emit('click', itemId)">
+    <div class="gallery-card-inner">
+      <img
+        :class="['gallery-card-img', { 'thumb-blur': store.blurThumbnails }]"
+        :src="thumbnailPath"
+        alt=""
+      />
+      <!-- Video badge -->
+      <span v-if="mediaType === 'videos'" class="gallery-card-badge">
+        <i class="fa-solid fa-film"></i>
+      </span>
     </div>
   </div>
 </template>
+
+<style scoped>
+.gallery-card {
+  position: relative;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #1a1a1a;
+  cursor: pointer;
+}
+
+.gallery-card-inner {
+  position: relative;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.gallery-card-img {
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
+  transition: transform 0.2s ease, filter 0.3s ease-in-out;
+}
+
+.gallery-card:hover .gallery-card-img:not(.thumb-blur) {
+  transform: scale(1.05);
+}
+
+.gallery-card-badge {
+  position: absolute;
+  top: 6px;
+  left: 6px;
+  background: rgba(0, 0, 0, 0.7);
+  color: #fff;
+  font-size: 0.7rem;
+  padding: 3px 6px;
+  border-radius: 3px;
+  pointer-events: none;
+}
+</style>

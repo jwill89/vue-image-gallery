@@ -7,7 +7,6 @@ import { hasAuthToken } from '../composables/useApi'
 import { getCategoryClassById } from '../constants/categories'
 import TagBadge from '../components/TagBadge.vue'
 import TagShortcodeModal from '../components/TagShortcodeModal.vue'
-import LoginModal from '../components/LoginModal.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 import ErrorMessage from '../components/ErrorMessage.vue'
 
@@ -51,6 +50,25 @@ const selectedTagObjects = computed(() => {
     .filter((t): t is Tag => t !== undefined)
 })
 
+const detailsTitle = computed(() =>
+  props.mediaType === 'images' ? 'Image Details' : 'Video Details'
+)
+
+const formattedDate = computed(() => {
+  if (!mediaItem.value?.file_time) return ''
+  const date = new Date(mediaItem.value.file_time * 1000)
+  return date.toLocaleString(undefined, {
+    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
+    hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short'
+  })
+})
+
+const fullPath = computed(() => {
+  if (!mediaItem.value) return ''
+  const folder = props.mediaType === 'images' ? 'images/full' : 'videos/full'
+  return `/${folder}/${mediaItem.value.file_name}`
+})
+
 onMounted(load)
 watch(() => [props.mediaType, props.mediaId], load)
 
@@ -63,7 +81,7 @@ async function load() {
 }
 
 function backToGallery() {
-  router.push({ name: props.mediaType, params: { page: 1, perPage: 40 } })
+  router.back()
 }
 
 function selectTag(tag: Tag) {
@@ -88,10 +106,6 @@ async function onRemoveTag(tagId: number) {
   if (confirm('Are you sure you want to remove this tag?')) {
     await removeTag(props.mediaType, props.mediaId, tagId)
   }
-}
-
-function onAuthenticated() {
-  authenticated.value = true
 }
 
 function onInput() {
@@ -140,107 +154,127 @@ const isVideo = (url: string) => {
 <template>
   <section class="section">
     <div class="container">
-      <LoginModal v-if="!authenticated" @authenticated="onAuthenticated" />
+      <LoadingSpinner v-if="loading" />
+      <ErrorMessage v-else-if="error" :message="error" />
       <template v-else>
-        <LoadingSpinner v-if="loading" />
-        <ErrorMessage v-else-if="error" :message="error" />
-        <template v-else>
-          <div class="columns">
-            <div class="column is-three-fifths">
-              <figure class="image tags-page-img">
-                <video v-if="mediaUrl && isVideo(mediaUrl)" controls :src="mediaUrl" />
-                <img v-else-if="mediaUrl" :src="mediaUrl" alt="" />
-              </figure>
-              <p v-if="mediaItem?.hash" class="help mt-2">MD5 Hash: {{ mediaItem.hash }}</p>
-            </div>
+        <div class="columns">
+          <div class="column is-three-fifths">
+            <figure class="image tags-page-img">
+              <video v-if="mediaUrl && isVideo(mediaUrl)" controls :src="mediaUrl" :class="{ 'thumb-blur': store.blurThumbnails }" />
+              <img v-else-if="mediaUrl" :src="mediaUrl" alt="" :class="{ 'thumb-blur': store.blurThumbnails }" />
+            </figure>
+          </div>
 
-            <div class="column">
-              <div class="content">
-                <button class="button is-link" @click="backToGallery">
-                  <span class="icon"><i class="fa-solid fa-backward"></i></span>
-                  <span>Back to Gallery</span>
-                </button>
+          <div class="column">
+            <button class="button is-link mb-4" @click="backToGallery">
+              <span class="icon"><i class="fa-solid fa-backward"></i></span>
+              <span>Back to Gallery</span>
+            </button>
 
-                <h2>Add More Tags</h2>
-                <label class="label">Tags</label>
-                <div class="add-tags-container">
-                  <div class="field has-addons">
-                    <div class="control is-expanded">
-                      <div class="tag-input-wrapper" @click="inputRef?.focus()">
-                        <span
-                          v-for="tag in selectedTagObjects"
-                          :key="tag.tag_id"
-                          class="tag"
-                          :class="getCategoryClassById(tag.category_id)"
-                        >
-                          {{ tag.tag_name }}
-                          <button class="delete is-small" @click.stop="removeSelectedTag(tag.tag_id)"></button>
-                        </span>
-                        <input
-                          ref="inputRef"
-                          type="text"
-                          class="tag-add-input"
-                          v-model="inputText"
-                          placeholder="Search tags..."
-                          @input="onInput"
-                          @focus="onFocus"
-                          @blur="onBlur"
-                          @keydown="onKeydown"
-                        />
-                      </div>
+            <!-- Media Details -->
+            <h2 class="title is-5">{{ detailsTitle }}</h2>
+            <table class="table is-narrow is-fullwidth">
+              <tbody>
+                <tr>
+                  <th>Date Added</th>
+                  <td>{{ formattedDate }}</td>
+                </tr>
+                <tr>
+                  <th>MD5 Hash</th>
+                  <td><code>{{ mediaItem?.hash }}</code></td>
+                </tr>
+                <tr>
+                  <th>Full {{ mediaType === 'images' ? 'Image' : 'Video' }}</th>
+                  <td><a :href="fullPath" target="_blank">View Full {{ mediaType === 'images' ? 'Image' : 'Video' }} <i class="fa-solid fa-up-right-from-square fa-xs"></i></a></td>
+                </tr>
+              </tbody>
+            </table>
 
-                      <div class="tag-dropdown" v-show="showDropdown && filteredTags.length > 0">
-                        <div
-                          v-for="(tag, idx) in filteredTags"
-                          :key="tag.tag_id"
-                          class="tag-dropdown-item"
-                          :class="{ 'is-highlighted': idx === highlightedIndex }"
-                          @mousedown.prevent="selectTag(tag)"
-                        >
-                          <span class="tag is-small" :class="getCategoryClassById(tag.category_id)">
-                            {{ tag.tag_name }}
-                          </span>
-                        </div>
-                        <div v-if="filteredTags.length === 20" class="tag-dropdown-footer">
-                          <span class="is-size-7 has-text-grey">Type to filter more results...</span>
-                        </div>
-                      </div>
+            <hr />
+
+            <!-- Add Tags -->
+            <h3 class="title is-6">Add Tags</h3>
+            <div class="add-tags-container">
+              <div class="field has-addons">
+                <div class="control is-expanded">
+                  <div class="tag-input-wrapper" @click="inputRef?.focus()">
+                    <span
+                      v-for="tag in selectedTagObjects"
+                      :key="tag.tag_id"
+                      class="tag"
+                      :class="getCategoryClassById(tag.category_id)"
+                    >
+                      {{ tag.tag_name }}
+                      <button class="delete is-small" @click.stop="removeSelectedTag(tag.tag_id)"></button>
+                    </span>
+                    <input
+                      ref="inputRef"
+                      type="text"
+                      class="tag-add-input"
+                      v-model="inputText"
+                      placeholder="Search tags to add..."
+                      @input="onInput"
+                      @focus="onFocus"
+                      @blur="onBlur"
+                      @keydown="onKeydown"
+                    />
+                  </div>
+
+                  <div class="tag-dropdown" v-show="showDropdown && filteredTags.length > 0">
+                    <div
+                      v-for="(tag, idx) in filteredTags"
+                      :key="tag.tag_id"
+                      class="tag-dropdown-item"
+                      :class="{ 'is-highlighted': idx === highlightedIndex }"
+                      @mousedown.prevent="selectTag(tag)"
+                    >
+                      <span class="tag is-small" :class="getCategoryClassById(tag.category_id)">
+                        {{ tag.tag_name }}
+                      </span>
                     </div>
-                    <div class="control">
-                      <button class="button is-primary" @click="onAddTags" :disabled="selectedTagIds.length === 0">
-                        Add Tags
-                      </button>
+                    <div v-if="filteredTags.length === 20" class="tag-dropdown-footer">
+                      <span class="is-size-7 has-text-grey">Type to filter more results...</span>
                     </div>
                   </div>
-                  <p class="help">
-                    Add tags. Multiple tags are allowed.
-                    <a @click.prevent="showHelpModal = true" style="cursor:pointer">Click here</a>
-                    to read more about tag categories, differentiated by colors.
-                  </p>
+                </div>
+                <div class="control">
+                  <button class="button is-primary" @click="onAddTags" :disabled="selectedTagIds.length === 0">
+                    Add Tags
+                  </button>
                 </div>
               </div>
+              <p class="help">
+                Add tags. Multiple tags are allowed.
+                <a @click.prevent="showHelpModal = true" style="cursor:pointer">Click here</a>
+                to read more about tag categories, differentiated by colors.
+              </p>
+            </div>
 
-              <div class="tags are-medium">
-                <TagBadge
-                  v-for="tag in tags"
-                  :key="tag.tag_id"
-                  :tag-id="tag.tag_id"
-                  :tag-name="tag.tag_name"
-                  :category-id="tag.category_id"
-                  :removable="true"
-                  @remove="onRemoveTag"
-                />
-              </div>
+            <hr />
+
+            <!-- Current Tags -->
+            <h3 class="title is-6">Current Tags</h3>
+            <div class="tags are-medium">
+              <TagBadge
+                v-for="tag in tags"
+                :key="tag.tag_id"
+                :tag-id="tag.tag_id"
+                :tag-name="tag.tag_name"
+                :category-id="tag.category_id"
+                :removable="authenticated"
+                @remove="onRemoveTag"
+              />
+              <span v-if="tags.length === 0" class="has-text-grey">No tags applied yet.</span>
             </div>
           </div>
-        </template>
-
-        <!-- Shortcode Help Modal -->
-        <div class="modal" :class="{ 'is-active': showHelpModal }">
-          <div class="modal-background" @click="showHelpModal = false"></div>
-          <TagShortcodeModal @close="showHelpModal = false" />
         </div>
       </template>
+
+      <!-- Shortcode Help Modal -->
+      <div class="modal" :class="{ 'is-active': showHelpModal }">
+        <div class="modal-background" @click="showHelpModal = false"></div>
+        <TagShortcodeModal @close="showHelpModal = false" />
+      </div>
     </div>
   </section>
 </template>
