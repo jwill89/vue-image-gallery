@@ -62,11 +62,11 @@ const thumbnailPath = computed(() => {
   max-height: 100%;
   object-fit: contain;
   border-radius: 6px;
-  transition: transform 0.2s ease, filter 0.3s ease-in-out;
+  transition: filter 0.2s ease;
 }
 
 .gallery-card:hover .gallery-card-img:not(.thumb-blur) {
-  transform: scale(1.05);
+  filter: brightness(1.2);
 }
 
 .gallery-card-badge {
