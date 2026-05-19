@@ -46,8 +46,6 @@ const thumbnailPath = computed(() => {
 .gallery-card {
   position: relative;
   border-radius: 6px;
-  overflow: hidden;
-  background: #1a1a1a;
   cursor: pointer;
 }
 
@@ -63,6 +61,7 @@ const thumbnailPath = computed(() => {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
+  border-radius: 6px;
   transition: transform 0.2s ease, filter 0.3s ease-in-out;
 }
 

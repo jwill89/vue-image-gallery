@@ -17,7 +17,11 @@
 .tags-page-img {
   max-width: fit-content;
   filter: drop-shadow(3px 3px 5px black);
-  transition: filter 0.3s ease-in-out 0s;
+  transition: filter 0.3s ease-in-out;
+}
+.tags-page-img img,
+.tags-page-img video {
+  transition: filter 0.3s ease-in-out;
 }
 .sticky-footer {
   display: flex;
@@ -26,6 +30,7 @@
 }
 .thumb-blur {
   filter: blur(10px) grayscale(0.5);
+  transition: filter 0.3s ease-in-out;
 }
 .gallery-image {
   transition: filter 0.3s ease-in-out;
