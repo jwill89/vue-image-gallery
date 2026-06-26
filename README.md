@@ -41,13 +41,14 @@ duplicate detection, favorites, and admin-gated uploads.
 
 ## Setup
 
-1. **Install backend dependencies**
+1. **Install backend dependencies** (the PHP app lives in `backend/`)
 
    ```bash
+   cd backend
    composer install
    ```
 
-2. **Configure the environment** — create a `.env` file in the project root:
+2. **Configure the environment** — create a `.env` file in `backend/`:
 
    ```dotenv
    # Required: admin password for uploads/deletes. Login is refused if this is unset.
@@ -69,7 +70,7 @@ duplicate detection, favorites, and admin-gated uploads.
 
    Explicit OS/Docker environment variables take precedence over `.env`.
 
-3. **Create the database** — Phinx migrations are the source of truth for the schema:
+3. **Create the database** — Phinx migrations are the source of truth for the schema (run from `backend/`):
 
    ```bash
    php db/setup.php          # creates db/gallery.db (if needed) and runs all migrations
@@ -82,12 +83,13 @@ duplicate detection, favorites, and admin-gated uploads.
    ```bash
    cd frontend
    npm install
-   npm run build            # outputs to ../dist, which index.php serves
+   npm run build            # outputs to frontend/dist, which index.php serves
    ```
 
-5. **Serve** the project root with Apache (PHP 8.5). The bundled `.htaccess`
-   serves built assets and real files, routes `/api` to the Slim app, and falls
-   back to `index.php` for the SPA (which also injects Open Graph meta tags).
+5. **Serve** `backend/` with Apache (PHP 8.5) — it is the app root (the deploy
+   flattens it onto the droplet's webroot). The bundled `.htaccess` serves built
+   assets and real files, routes `/api` to the Slim app, and falls back to
+   `index.php` for the SPA (which also injects Open Graph meta tags).
 
 ## Development
 
@@ -110,8 +112,9 @@ The app is deployed to the DigitalOcean droplet with [`scripts/deploy.ps1`](scri
 .\scripts\deploy.ps1 -SkipComposer -SkipMigrate   # code-only push
 ```
 
-It builds the frontend, ships a tarball of code + `dist/` (never the database, `.env`, or
-`media/`), then on the host runs `composer install` and database migrations (via `db/setup.php`,
+It builds the frontend, then ships a tarball that **flattens `backend/` + `frontend/dist`** onto the
+droplet's webroot — code only (never the database, `.env`, `vendor/`, or `media/`) — then on the host
+runs `composer install` and database migrations (via `db/setup.php`,
 which baselines a pre-Phinx database before applying pending migrations), restores ownership to
 `www-data`, clears the API cache, and health-checks the API. A `.deploy-backup/` rollback copy is
 kept on the host unless `-NoBackup` is passed. If a passphrase-protected key is used, load it into
@@ -119,21 +122,21 @@ Pageant first (`pageant.exe <key>`).
 
 ## Adding & maintaining media
 
-Drop new files into the `media/` input folder and run the ingest pipeline:
+Drop new files into the `backend/media/` input folder and run the ingest pipeline:
 
 ```bash
-php scripts/cron.php     # ingests media/ → media/full/, builds thumbnails + fingerprints,
-                         # and prunes DB rows whose files were deleted
+php backend/scripts/cron.php     # ingests media/ → media/full/, builds thumbnails + fingerprints,
+                                 # and prunes DB rows whose files were deleted
 ```
 
-Other maintenance scripts (run from anywhere; they `chdir` to the project root):
+Other maintenance scripts (run from anywhere; they `chdir` to the app root):
 
 ```bash
-php scripts/dupes.php                    # scan for duplicates → dupes/dupes-YYYY-MM-DD.json
-php scripts/regenerate-thumbnails.php    # rebuild all thumbnails
-php scripts/regenerate-fingerprints.php  # rebuild perceptual fingerprints
-php scripts/regenerate-metadata.php      # backfill dimensions/duration/file size on existing media
-php scripts/tag_imports.php              # bulk Danbooru tag import
+php backend/scripts/dupes.php                    # scan for duplicates → dupes/dupes-YYYY-MM-DD.json
+php backend/scripts/regenerate-thumbnails.php    # rebuild all thumbnails
+php backend/scripts/regenerate-fingerprints.php  # rebuild perceptual fingerprints
+php backend/scripts/regenerate-metadata.php      # backfill dimensions/duration/file size on existing media
+php backend/scripts/tag_imports.php              # bulk Danbooru tag import
 ```
 
 Schedule `cron.php` (and optionally `dupes.php`) via cron/Task Scheduler to
@@ -141,7 +144,7 @@ automatically ingest newly added files.
 
 ## Database migrations
 
-The schema lives entirely in `db/migrations/`. To change it:
+The schema lives entirely in `backend/db/migrations/`. To change it (run from `backend/`):
 
 ```bash
 php vendor/bin/phinx create AddSomethingUseful   # scaffold a migration
@@ -159,8 +162,8 @@ Do **not** hand-edit the schema elsewhere — add a migration.
   origin check. State-changing requests with no `Origin`/`Referer` are rejected.
 - Login is rate-limited (10 attempts / 5 minutes per IP) on top of the global
   request limiter.
-- `.env`, `db/gallery.db`, `logs/`, `cache/`, and `dupes/` are gitignored and
-  must never be committed.
+- `backend/.env`, `backend/db/gallery.db`, `backend/logs/`, `backend/cache/`, and
+  `backend/dupes/` are gitignored and must never be committed.
 
 ## License
 
