@@ -1,0 +1,455 @@
+<script setup lang="ts">
+import { ref, onMounted, computed } from 'vue'
+import { useApi, hasAuthToken, setAuthToken } from '../composables/useApi'
+import { useGalleryStore } from '../stores/gallery'
+import { useToastStore } from '../stores/toast'
+import LoadingSpinner from '../components/LoadingSpinner.vue'
+
+interface DupeMedia {
+  media_id: number
+  file_name: string
+  hash: string
+}
+
+interface DupeMatch {
+  media_1: DupeMedia
+  media_2: DupeMedia
+  distance: number | null
+  ssim: number | null
+}
+
+interface DupeReport {
+  report_file: string
+  generated_at: string | null
+  images_compared: number | null
+  duplicates_found: number
+  matches: DupeMatch[]
+}
+
+const api = useApi()
+const store = useGalleryStore()
+const toastStore = useToastStore()
+
+// Auth state
+const authenticated = ref(hasAuthToken())
+const passwordInput = ref('')
+const authError = ref<string | null>(null)
+const authLoading = ref(false)
+
+const report = ref<DupeReport | null>(null)
+const loading = ref(false)
+const loadFailed = ref(false)
+const scanning = ref(false)
+const deleting = ref(false)
+const dismissing = ref<string | null>(null)
+const selectedMedia = ref<Set<number>>(new Set())
+
+const hasSelection = computed(() => selectedMedia.value.size > 0)
+const selectionCount = computed(() => selectedMedia.value.size)
+
+async function login() {
+  authLoading.value = true
+  authError.value = null
+  try {
+    const result = await api.post<{ token: string }>('/auth/login/', { password: passwordInput.value })
+    setAuthToken(result.token)
+    authenticated.value = true
+    passwordInput.value = ''
+    await loadReport()
+  } catch (e: any) {
+    authError.value = 'Invalid password'
+  } finally {
+    authLoading.value = false
+  }
+}
+
+async function loadReport() {
+  loading.value = true
+  loadFailed.value = false
+
+  try {
+    report.value = await api.get<DupeReport>('/duplicates/report/')
+  } catch (e: any) {
+    const status = e?.status ?? 0
+    if (status === 401) {
+      authenticated.value = false
+      return
+    }
+    if (status === 404) {
+      report.value = null
+    } else {
+      toastStore.error(e.message || 'Failed to load the duplicates report.', 6000, 'Load Failed')
+      loadFailed.value = true
+      report.value = null
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+async function runScan() {
+  scanning.value = true
+
+  try {
+    await api.post('/duplicates/scan/', {})
+    toastStore.success('The duplicate scan is complete. Loading results...', 4000, 'Scan Complete')
+    selectedMedia.value.clear()
+    await loadReport()
+  } catch (e: any) {
+    toastStore.error(e.message || 'The duplicate scan failed.', 6000, 'Scan Failed')
+  } finally {
+    scanning.value = false
+  }
+}
+
+async function deleteSelected() {
+  if (!hasSelection.value) return
+  if (!confirm(`Are you sure you want to delete ${selectionCount.value} media item(s) from the database?`)) return
+
+  deleting.value = true
+
+  try {
+    const ids = Array.from(selectedMedia.value)
+    const result = await api.del<{ deleted: number[], failed: number[], total_deleted: number }>('/duplicates/media/', { media_ids: ids })
+    toastStore.success(
+      `${result.total_deleted} media item(s) removed from the database.`,
+      4000,
+      'Media Deleted',
+    )
+    selectedMedia.value.clear()
+    await loadReport()
+    await store.refreshTotals()
+  } catch (e: any) {
+    toastStore.error(e.message || 'Failed to delete the selected media.', 6000, 'Delete Failed')
+  } finally {
+    deleting.value = false
+  }
+}
+
+async function dismissPair(match: DupeMatch) {
+  const pairKey = `${match.media_1.media_id}:${match.media_2.media_id}`
+  dismissing.value = pairKey
+
+  try {
+    await api.post('/duplicates/dismiss/', {
+      media_id_1: match.media_1.media_id,
+      media_id_2: match.media_2.media_id,
+    })
+    toastStore.success('This pair will no longer appear in future reports.', 4000, 'Pair Dismissed')
+
+    // Remove from the local report immediately
+    if (report.value) {
+      report.value.matches = report.value.matches.filter(m =>
+        !(m.media_1.media_id === match.media_1.media_id && m.media_2.media_id === match.media_2.media_id)
+      )
+      report.value.duplicates_found = report.value.matches.length
+    }
+  } catch (e: any) {
+    toastStore.error(e.message || 'Could not dismiss this pair.', 6000, 'Dismiss Failed')
+  } finally {
+    dismissing.value = null
+  }
+}
+
+function toggleSelect(mediaId: number) {
+  const newSet = new Set(selectedMedia.value)
+  if (newSet.has(mediaId)) {
+    newSet.delete(mediaId)
+  } else {
+    newSet.add(mediaId)
+  }
+  selectedMedia.value = newSet
+}
+
+function isSelected(mediaId: number): boolean {
+  return selectedMedia.value.has(mediaId)
+}
+
+function selectAll() {
+  if (!report.value) return
+  const newSet = new Set<number>()
+  // Select the second image from each pair (likely the duplicate)
+  for (const match of report.value.matches) {
+    newSet.add(match.media_2.media_id)
+  }
+  selectedMedia.value = newSet
+}
+
+function clearSelection() {
+  selectedMedia.value = new Set()
+}
+
+function fullUrl(fileName: string): string {
+  return `/media/full/${fileName}`
+}
+
+function ssimLabel(ssim: number | null): string {
+  if (ssim === null) return 'N/A'
+  const pct = (ssim * 100).toFixed(1)
+  return `${pct}%`
+}
+
+function ssimClass(ssim: number | null): string {
+  if (ssim === null) return 'has-text-grey'
+  if (ssim >= 0.95) return 'has-text-danger'
+  if (ssim >= 0.85) return 'has-text-warning'
+  return 'has-text-info'
+}
+
+onMounted(() => {
+  if (authenticated.value) {
+    loadReport()
+  }
+})
+</script>
+
+<template>
+  <section class="section">
+    <div class="container">
+      <!-- Login Gate -->
+      <template v-if="!authenticated">
+        <div class="columns is-centered">
+          <div class="column is-4">
+            <div class="box">
+              <h2 class="title is-4 has-text-centered">
+                <span class="icon"><i class="fa-solid fa-lock"></i></span>
+                Authentication Required
+              </h2>
+              <p class="has-text-centered mb-4">Enter the admin password to access the duplicates page.</p>
+              <div class="field">
+                <div class="control has-icons-left">
+                  <input
+                    class="input"
+                    :class="{ 'is-danger': authError }"
+                    type="password"
+                    placeholder="Password"
+                    v-model="passwordInput"
+                    @keyup.enter="login"
+                  />
+                  <span class="icon is-left"><i class="fa-solid fa-key"></i></span>
+                </div>
+                <p v-if="authError" class="help is-danger">{{ authError }}</p>
+              </div>
+              <button
+                class="button is-primary is-fullwidth"
+                :class="{ 'is-loading': authLoading }"
+                :disabled="authLoading || !passwordInput"
+                @click="login"
+              >
+                Login
+              </button>
+            </div>
+          </div>
+        </div>
+      </template>
+
+      <!-- Authenticated Content -->
+      <template v-else>
+        <!-- Header -->
+        <div class="level">
+          <div class="level-left">
+            <div class="level-item">
+              <h1 class="title">Duplicate Media</h1>
+            </div>
+          </div>
+          <div class="level-right">
+            <div class="level-item">
+              <button class="button is-info" :class="{ 'is-loading': scanning }" :disabled="scanning" @click="runScan">
+                <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+                <span>Run New Scan</span>
+              </button>
+            </div>
+            <div class="level-item" v-if="hasSelection">
+              <button class="button is-danger" :class="{ 'is-loading': deleting }" :disabled="deleting" @click="deleteSelected">
+                <span class="icon"><i class="fa-solid fa-trash"></i></span>
+                <span>Delete Selected ({{ selectionCount }})</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Loading -->
+        <LoadingSpinner v-if="loading" message="Loading duplicates report..." />
+
+        <!-- Load Failed -->
+        <div v-else-if="loadFailed" class="has-text-centered py-6">
+          <span class="icon is-large has-text-grey-light">
+            <i class="fa-solid fa-triangle-exclamation fa-3x"></i>
+          </span>
+          <p class="is-size-5 has-text-grey mt-4">Could not load the duplicates report.</p>
+          <button class="button is-indigo mt-4" @click="loadReport">
+            <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
+            <span>Retry</span>
+          </button>
+        </div>
+
+        <!-- No Report -->
+        <div v-else-if="!report" class="has-text-centered py-6">
+          <span class="icon is-large has-text-grey-light">
+            <i class="fa-solid fa-magnifying-glass fa-3x"></i>
+          </span>
+          <p class="is-size-5 has-text-grey mt-4">No duplicate report found. Run a scan to generate one.</p>
+        </div>
+
+        <!-- Report Content -->
+        <template v-else>
+          <!-- Report metadata -->
+          <div class="box mb-5">
+            <div class="columns">
+              <div class="column has-text-centered">
+                <p class="heading">Report File</p>
+                <p class="title is-6">{{ report.report_file }}</p>
+              </div>
+              <div class="column has-text-centered">
+                <p class="heading">Generated</p>
+                <p class="title is-6">{{ report.generated_at || 'Unknown' }}</p>
+              </div>
+              <div class="column has-text-centered">
+                <p class="heading">Images Compared</p>
+                <p class="title is-6">{{ report.images_compared?.toLocaleString() || '—' }}</p>
+              </div>
+              <div class="column has-text-centered">
+                <p class="heading">Duplicates Found</p>
+                <p class="title is-6">{{ report.duplicates_found }}</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Selection Controls -->
+          <div class="buttons mb-4" v-if="report.matches.length > 0">
+            <button class="button is-small is-warning" @click="selectAll">
+              <span class="icon"><i class="fa-solid fa-check-double"></i></span>
+              <span>Select All Duplicates (Right Column)</span>
+            </button>
+            <button class="button is-small" @click="clearSelection" v-if="hasSelection">
+              <span class="icon"><i class="fa-solid fa-xmark"></i></span>
+              <span>Clear Selection</span>
+            </button>
+          </div>
+
+          <!-- No duplicates -->
+          <div class="notification is-info is-light" v-if="report.matches.length === 0">
+            No duplicate pairs found in the latest report.
+          </div>
+
+          <!-- Duplicate Pairs -->
+          <div v-for="(match, index) in report.matches" :key="index" class="box mb-5">
+            <!-- Images side by side -->
+            <div class="columns">
+              <!-- Image 1 -->
+              <div class="column is-6">
+                <div class="card" :class="{ 'has-background-danger-light': isSelected(match.media_1.media_id) }">
+                  <div class="card-content has-text-centered has-background-grey-darker dupe-image-container">
+                    <a :href="fullUrl(match.media_1.file_name)" target="_blank">
+                      <img
+                        :src="fullUrl(match.media_1.file_name)"
+                        alt=""
+                        :class="['dupe-image', { 'thumb-blur': store.blurThumbnails }]"
+                        loading="lazy"
+                      />
+                    </a>
+                  </div>
+                  <footer class="card-footer">
+                    <div class="card-footer-item">
+                      <label class="checkbox">
+                        <input type="checkbox" :checked="isSelected(match.media_1.media_id)"
+                          @change="toggleSelect(match.media_1.media_id)" />
+                        &nbsp;Select
+                      </label>
+                    </div>
+                    <div class="card-footer-item">
+                      <span class="is-size-7">ID: {{ match.media_1.media_id }}</span>
+                    </div>
+                    <a class="card-footer-item" :href="fullUrl(match.media_1.file_name)" target="_blank">
+                      <span class="icon has-text-info-dark"><i class="fa-solid fa-up-right-from-square"></i></span>
+                    </a>
+                  </footer>
+                </div>
+              </div>
+
+              <!-- Image 2 -->
+              <div class="column is-6">
+                <div class="card" :class="{ 'has-background-danger-light': isSelected(match.media_2.media_id) }">
+                  <div class="card-content has-text-centered has-background-grey-darker dupe-image-container">
+                    <a :href="fullUrl(match.media_2.file_name)" target="_blank">
+                      <img
+                        :src="fullUrl(match.media_2.file_name)"
+                        alt=""
+                        :class="['dupe-image', { 'thumb-blur': store.blurThumbnails }]"
+                        loading="lazy"
+                      />
+                    </a>
+                  </div>
+                  <footer class="card-footer">
+                    <div class="card-footer-item">
+                      <label class="checkbox">
+                        <input type="checkbox" :checked="isSelected(match.media_2.media_id)"
+                          @change="toggleSelect(match.media_2.media_id)" />
+                        &nbsp;Select
+                      </label>
+                    </div>
+                    <div class="card-footer-item">
+                      <span class="is-size-7">ID: {{ match.media_2.media_id }}</span>
+                    </div>
+                    <a class="card-footer-item" :href="fullUrl(match.media_2.file_name)" target="_blank">
+                      <span class="icon has-text-info-dark"><i class="fa-solid fa-up-right-from-square"></i></span>
+                    </a>
+                  </footer>
+                </div>
+              </div>
+            </div>
+
+            <!-- Action bar: stats + dismiss -->
+            <div class="level mt-3">
+              <div class="level-left">
+                <div class="level-item" v-if="match.distance !== null">
+                  <span class="tag is-medium is-dark">
+                    <span class="icon mr-1"><i class="fa-solid fa-arrows-left-right"></i></span>
+                    Distance: {{ match.distance }}
+                  </span>
+                </div>
+                <div class="level-item" v-if="match.ssim !== null">
+                  <span class="tag is-medium" :class="ssimClass(match.ssim)">
+                    SSIM: {{ ssimLabel(match.ssim) }}
+                  </span>
+                </div>
+              </div>
+              <div class="level-right">
+                <div class="level-item">
+                  <button
+                    class="button is-amber is-outlined"
+                    :class="{ 'is-loading': dismissing === `${match.media_1.media_id}:${match.media_2.media_id}` }"
+                    :disabled="dismissing !== null"
+                    @click="dismissPair(match)"
+                    title="Mark as not a duplicate — hides this pair from future reports"
+                  >
+                    <span class="icon"><i class="fa-solid fa-eye-slash"></i></span>
+                    <span>Not a Duplicate</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </template>
+    </div>
+  </section>
+</template>
+
+<style scoped>
+.dupe-image-container {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 200px;
+  max-height: 500px;
+  overflow: hidden;
+}
+
+.dupe-image {
+  max-width: 100%;
+  max-height: 480px;
+  object-fit: contain;
+  border-radius: 4px;
+}
+</style>

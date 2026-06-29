@@ -1,0 +1,82 @@
+<script setup lang="ts">
+import { computed } from 'vue'
+import { useGalleryStore } from '../stores/gallery'
+import TagMultiSelect from './TagMultiSelect.vue'
+
+const store = useGalleryStore()
+
+const props = defineProps<{
+  modelValue: string[]
+}>()
+
+const emit = defineEmits<{
+  'update:modelValue': [tags: string[]]
+  search: []
+  reset: []
+}>()
+
+const selectedIds = computed({
+  get: () => {
+    return props.modelValue
+      .map(name => {
+        const negated = name.startsWith('-')
+        const cleanName = negated ? name.substring(1) : name
+        const tag = store.allTags.find(t => t.tag_name.toLowerCase() === cleanName.toLowerCase())
+        if (!tag) return undefined
+        return negated ? -tag.tag_id : tag.tag_id
+      })
+      .filter((id): id is number => id !== undefined)
+  },
+  set: (ids: number[]) => {
+    const names = ids
+      .map(id => {
+        const negated = id < 0
+        const tag = store.allTags.find(t => t.tag_id === Math.abs(id))
+        if (!tag) return undefined
+        return negated ? `-${tag.tag_name}` : tag.tag_name
+      })
+      .filter((name): name is string => name !== undefined)
+    emit('update:modelValue', names)
+  }
+})
+
+const hasSelectedTags = computed(() => props.modelValue.length > 0)
+</script>
+
+<template>
+  <div class="tag-search-container">
+    <TagMultiSelect
+      v-model="selectedIds"
+      placeholder="Search tags..."
+      @submit="emit('search')"
+    >
+      <template #actions>
+        <div class="control" v-if="!hasSelectedTags">
+          <button class="button" disabled>
+            <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+          </button>
+        </div>
+        <template v-else>
+          <div class="control">
+            <button class="button is-primary" @click="emit('search')">
+              <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+              <span>Search</span>
+            </button>
+          </div>
+          <div class="control">
+            <button class="button is-light" @click="emit('reset')">
+              <span class="icon"><i class="fa-solid fa-xmark"></i></span>
+            </button>
+          </div>
+        </template>
+      </template>
+    </TagMultiSelect>
+  </div>
+</template>
+
+<style scoped>
+.tag-search-container {
+  min-width: 280px;
+  max-width: 400px;
+}
+</style>

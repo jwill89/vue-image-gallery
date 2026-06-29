@@ -1,0 +1,500 @@
+/* ═══════════════════════════════════════════════════════════
+   Gallery — Custom Theme
+   WCAG AA compliant on dark backgrounds (#242424 base)
+   All text colors ≥ 4.5:1 contrast ratio for normal text
+   ═══════════════════════════════════════════════════════════ */
+
+/* ── Extended Color Palette ───────────────────────────────
+   These supplement Bulma's built-in named colors
+   (white, light, dark, primary, link, info, success,
+   warning, danger) with more options for tag categories.
+   ──────────────────────────────────────────────────────── */
+
+:root {
+  --gallery-teal:    #2dd4bf;
+  --gallery-purple:  #a78bfa;
+  --gallery-pink:    #f472b6;
+  --gallery-orange:  #fb923c;
+  --gallery-cyan:    #22d3ee;
+  --gallery-lime:    #a3e635;
+  --gallery-indigo:  #818cf8;
+  --gallery-rose:    #fb7185;
+  --gallery-amber:   #fbbf24;
+  --gallery-emerald: #34d399;
+
+  /* Dark text for light tag backgrounds */
+  --gallery-tag-dark-text: #0f172a;
+}
+
+/* ── Tag background classes (is-COLOR) ─────────────────── */
+
+.tag.is-teal    { background-color: var(--gallery-teal);    color: var(--gallery-tag-dark-text); }
+.tag.is-purple  { background-color: var(--gallery-purple);  color: var(--gallery-tag-dark-text); }
+.tag.is-pink    { background-color: var(--gallery-pink);    color: var(--gallery-tag-dark-text); }
+.tag.is-orange  { background-color: var(--gallery-orange);  color: var(--gallery-tag-dark-text); }
+.tag.is-cyan    { background-color: var(--gallery-cyan);    color: var(--gallery-tag-dark-text); }
+.tag.is-lime    { background-color: var(--gallery-lime);    color: var(--gallery-tag-dark-text); }
+.tag.is-indigo  { background-color: var(--gallery-indigo);  color: var(--gallery-tag-dark-text); }
+.tag.is-rose    { background-color: var(--gallery-rose);    color: var(--gallery-tag-dark-text); }
+.tag.is-amber   { background-color: var(--gallery-amber);   color: var(--gallery-tag-dark-text); }
+.tag.is-emerald { background-color: var(--gallery-emerald); color: var(--gallery-tag-dark-text); }
+
+/* Delete button inside extended-color tags */
+.tag.is-teal    .delete::before, .tag.is-teal    .delete::after,
+.tag.is-purple  .delete::before, .tag.is-purple  .delete::after,
+.tag.is-pink    .delete::before, .tag.is-pink    .delete::after,
+.tag.is-orange  .delete::before, .tag.is-orange  .delete::after,
+.tag.is-cyan    .delete::before, .tag.is-cyan    .delete::after,
+.tag.is-lime    .delete::before, .tag.is-lime    .delete::after,
+.tag.is-indigo  .delete::before, .tag.is-indigo  .delete::after,
+.tag.is-rose    .delete::before, .tag.is-rose    .delete::after,
+.tag.is-amber   .delete::before, .tag.is-amber   .delete::after,
+.tag.is-emerald .delete::before, .tag.is-emerald .delete::after {
+  background-color: var(--gallery-tag-dark-text);
+}
+
+/* ── Text color classes (has-text-COLOR) ───────────────── */
+
+.has-text-teal    { color: var(--gallery-teal)    !important; }
+.has-text-purple  { color: var(--gallery-purple)  !important; }
+.has-text-pink    { color: var(--gallery-pink)    !important; }
+.has-text-orange  { color: var(--gallery-orange)  !important; }
+.has-text-cyan    { color: var(--gallery-cyan)    !important; }
+.has-text-lime    { color: var(--gallery-lime)    !important; }
+.has-text-indigo  { color: var(--gallery-indigo)  !important; }
+.has-text-rose    { color: var(--gallery-rose)    !important; }
+.has-text-amber   { color: var(--gallery-amber)   !important; }
+.has-text-emerald { color: var(--gallery-emerald) !important; }
+
+/* ── Button color classes ──────────────────────────────── */
+
+.button.is-teal    { background-color: var(--gallery-teal);    border-color: transparent; color: var(--gallery-tag-dark-text); }
+.button.is-purple  { background-color: var(--gallery-purple);  border-color: transparent; color: var(--gallery-tag-dark-text); }
+.button.is-pink    { background-color: var(--gallery-pink);    border-color: transparent; color: var(--gallery-tag-dark-text); }
+.button.is-orange  { background-color: var(--gallery-orange);  border-color: transparent; color: var(--gallery-tag-dark-text); }
+.button.is-cyan    { background-color: var(--gallery-cyan);    border-color: transparent; color: var(--gallery-tag-dark-text); }
+.button.is-lime    { background-color: var(--gallery-lime);    border-color: transparent; color: var(--gallery-tag-dark-text); }
+.button.is-indigo  { background-color: var(--gallery-indigo);  border-color: transparent; color: var(--gallery-tag-dark-text); }
+.button.is-rose    { background-color: var(--gallery-rose);    border-color: transparent; color: var(--gallery-tag-dark-text); }
+.button.is-amber   { background-color: var(--gallery-amber);   border-color: transparent; color: var(--gallery-tag-dark-text); }
+.button.is-emerald { background-color: var(--gallery-emerald); border-color: transparent; color: var(--gallery-tag-dark-text); }
+
+.button.is-teal:hover    { background-color: color-mix(in srgb, var(--gallery-teal) 85%, black);    }
+.button.is-purple:hover  { background-color: color-mix(in srgb, var(--gallery-purple) 85%, black);  }
+.button.is-pink:hover    { background-color: color-mix(in srgb, var(--gallery-pink) 85%, black);    }
+.button.is-orange:hover  { background-color: color-mix(in srgb, var(--gallery-orange) 85%, black);  }
+.button.is-cyan:hover    { background-color: color-mix(in srgb, var(--gallery-cyan) 85%, black);    }
+.button.is-lime:hover    { background-color: color-mix(in srgb, var(--gallery-lime) 85%, black);    }
+.button.is-indigo:hover  { background-color: color-mix(in srgb, var(--gallery-indigo) 85%, black);  }
+.button.is-rose:hover    { background-color: color-mix(in srgb, var(--gallery-rose) 85%, black);    }
+.button.is-amber:hover   { background-color: color-mix(in srgb, var(--gallery-amber) 85%, black);   }
+.button.is-emerald:hover { background-color: color-mix(in srgb, var(--gallery-emerald) 85%, black); }
+
+/* ── Outlined button variants ──────────────────────────── */
+
+.button.is-teal.is-outlined    { background-color: transparent; border-color: var(--gallery-teal);    color: var(--gallery-teal);    }
+.button.is-purple.is-outlined  { background-color: transparent; border-color: var(--gallery-purple);  color: var(--gallery-purple);  }
+.button.is-pink.is-outlined    { background-color: transparent; border-color: var(--gallery-pink);    color: var(--gallery-pink);    }
+.button.is-orange.is-outlined  { background-color: transparent; border-color: var(--gallery-orange);  color: var(--gallery-orange);  }
+.button.is-cyan.is-outlined    { background-color: transparent; border-color: var(--gallery-cyan);    color: var(--gallery-cyan);    }
+.button.is-lime.is-outlined    { background-color: transparent; border-color: var(--gallery-lime);    color: var(--gallery-lime);    }
+.button.is-indigo.is-outlined  { background-color: transparent; border-color: var(--gallery-indigo);  color: var(--gallery-indigo);  }
+.button.is-rose.is-outlined    { background-color: transparent; border-color: var(--gallery-rose);    color: var(--gallery-rose);    }
+.button.is-amber.is-outlined   { background-color: transparent; border-color: var(--gallery-amber);   color: var(--gallery-amber);   }
+.button.is-emerald.is-outlined { background-color: transparent; border-color: var(--gallery-emerald); color: var(--gallery-emerald); }
+
+
+/* ═══════════════════════════════════════════════════════════
+   Modal Overrides — Fix dark-mode appearance
+   Removes the white/light glow on modal-card-head and
+   ensures the entire modal blends with the dark theme.
+   ═══════════════════════════════════════════════════════════ */
+
+@media (prefers-color-scheme: dark) {
+  .modal-card-head {
+    background-color: #1e2028;
+    border-bottom: 1px solid #363b4e;
+  }
+
+  .modal-card-title {
+    color: #e8eaed;
+  }
+
+  .modal-card-body {
+    background-color: #262a36;
+    color: #d1d5db;
+  }
+
+  .modal-card-foot {
+    background-color: #1e2028;
+    border-top: 1px solid #363b4e;
+  }
+
+  /* Fix modal form labels */
+  .modal-card-body .label {
+    color: #d1d5db;
+  }
+
+  /* Fix modal help text */
+  .modal-card-body .help {
+    color: #9ca3af;
+  }
+  .modal-card-body .help.is-danger  { color: #f87171; }
+  .modal-card-body .help.is-success { color: #4ade80; }
+  .modal-card-body .help.is-warning { color: #fbbf24; }
+
+  /* Fix modal inputs */
+  .modal-card-body .input,
+  .modal-card-body .textarea,
+  .modal-card-body .select select {
+    background-color: #1a1d27;
+    border-color: #3d4358;
+    color: #e8eaed;
+  }
+
+  .modal-card-body .input:focus,
+  .modal-card-body .textarea:focus,
+  .modal-card-body .select select:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+  }
+
+  .modal-card-body .input::placeholder,
+  .modal-card-body .textarea::placeholder {
+    color: #6b7280;
+  }
+
+  /* Fix the delete (×) button in modal headers */
+  .modal-card-head .delete {
+    background-color: rgba(255, 255, 255, 0.15);
+  }
+  .modal-card-head .delete:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+  }
+
+  /* Fix modal radio/checkbox labels */
+  .modal-card-body .radio,
+  .modal-card-body .checkbox {
+    color: #d1d5db;
+  }
+
+
+  /* ── Navbar dark mode ─────────────────────────────────── */
+
+  .navbar-item:hover,
+  a.navbar-item:hover {
+    background-color: #2e3346;
+    color: #ffffff;
+  }
+
+  .navbar-item.is-selected {
+    color: #ffffff;
+  }
+
+  /* ── Table dark mode improvements ─────────────────────── */
+
+  .table {
+    background-color: #1a1d27;
+    color: #d1d5db;
+  }
+
+  .table th {
+    color: #e8eaed;
+    border-color: #363b4e;
+  }
+
+  .table td {
+    border-color: #2e3346;
+  }
+
+  .table.is-striped tbody tr:nth-child(even) {
+    background-color: #1e2028;
+  }
+
+  .table.is-hoverable tbody tr:hover {
+    background-color: #2e3346;
+  }
+
+  .table thead th {
+    border-bottom-color: #3d4358;
+  }
+
+  /* ── Box dark mode ────────────────────────────────────── */
+
+  .box {
+    background-color: #1e2028;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  /* ── Pagination dark mode ─────────────────────────────── */
+
+  .pagination-link,
+  .pagination-previous,
+  .pagination-next {
+    border-color: #3d4358;
+    color: #d1d5db;
+  }
+
+  .pagination-link:hover,
+  .pagination-previous:hover,
+  .pagination-next:hover {
+    border-color: #6366f1;
+    color: #e8eaed;
+  }
+
+  .pagination-link.is-current {
+    background-color: #6366f1;
+    border-color: #6366f1;
+    color: #ffffff;
+  }
+
+  .pagination-ellipsis {
+    color: #6b7280;
+  }
+
+  /* ── Notification dark mode ───────────────────────────── */
+
+  .notification.is-success.is-light {
+    background-color: rgba(72, 199, 142, 0.12);
+    color: #4ade80;
+  }
+
+  .notification.is-danger.is-light {
+    background-color: rgba(241, 70, 104, 0.12);
+    color: #f87171;
+  }
+
+  .notification.is-warning.is-light {
+    background-color: rgba(255, 224, 138, 0.1);
+    color: #fbbf24;
+  }
+
+  .notification.is-info.is-light {
+    background-color: rgba(62, 142, 208, 0.12);
+    color: #60a5fa;
+  }
+
+  /* ── Code tag styling ─────────────────────────────────── */
+
+  code {
+    background-color: rgba(99, 102, 241, 0.12);
+    color: #a5b4fc;
+    padding: 0.15em 0.4em;
+    border-radius: 3px;
+  }
+
+  /* ── Breadcrumb styling ───────────────────────────────── */
+
+  .breadcrumb a {
+    color: #9ca3af;
+  }
+
+  .breadcrumb a:hover {
+    color: #e8eaed;
+  }
+
+  .breadcrumb li.is-active a {
+    color: #e8eaed;
+  }
+
+  .breadcrumb li + li::before {
+    color: #4b5563;
+  }
+
+  /* ── Form select dark mode ────────────────────────────── */
+
+  .select select {
+    background-color: #1a1d27;
+    border-color: #3d4358;
+    color: #d1d5db;
+  }
+
+  .select select:hover {
+    border-color: #4b5563;
+  }
+
+  .select::after {
+    border-color: #9ca3af;
+  }
+
+  .input {
+    background-color: #1a1d27;
+    border-color: #3d4358;
+    color: #e8eaed;
+  }
+
+  .input:focus,
+  .select select:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+  }
+
+  .input::placeholder {
+    color: #6b7280;
+  }
+
+  .textarea {
+    background-color: #1a1d27;
+    border-color: #3d4358;
+    color: #e8eaed;
+  }
+
+  .textarea:focus {
+    border-color: #6366f1;
+    box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.25);
+  }
+
+  .textarea::placeholder {
+    color: #6b7280;
+  }
+
+  /* ── HR rule ──────────────────────────────────────────── */
+
+  hr {
+    background-color: #2e3346;
+  }
+
+  /* ── Card dark mode ───────────────────────────────────── */
+
+  .card {
+    background-color: #1e2028;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
+  }
+
+  .card-footer {
+    border-top-color: #2e3346;
+  }
+
+  .card-footer-item {
+    border-right-color: #2e3346;
+    color: #d1d5db;
+  }
+
+  /* ── Footer dark mode ─────────────────────────────────── */
+
+  .footer {
+    background-color: #111318;
+    color: #9ca3af;
+  }
+
+  .footer a {
+    color: #818cf8;
+  }
+
+  .footer a:hover {
+    color: #a5b4fc;
+  }
+
+  /* ── General link styling ─────────────────────────────── */
+
+  a.has-text-link {
+    color: #818cf8;
+  }
+
+  a.has-text-link:hover {
+    color: #a5b4fc;
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════════════
+   Dark-mode dropdown lists (used in tag search modals)
+   These appear in TagListView, TagImplicationsView, etc.
+   ═══════════════════════════════════════════════════════════ */
+
+@media (prefers-color-scheme: dark) {
+  .dropdown-list {
+    border-color: #3d4358;
+    background-color: #1a1d27;
+  }
+
+  .dropdown-item:hover,
+  .dropdown-item.is-active {
+    background-color: #2e3346;
+  }
+}
+
+
+/* ═══════════════════════════════════════════════════════════
+   Layout
+   ═══════════════════════════════════════════════════════════ */
+
+.parent {
+  display: flex;
+  flex-direction: row;
+  justify-content: space-between;
+  align-content: flex-start;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  margin: 0 auto;
+}
+.parent::after {
+  content: "";
+  flex: auto;
+}
+.child {
+  margin: 0 1rem 2rem 1rem;
+}
+.tags-page-img {
+  max-width: fit-content;
+  filter: drop-shadow(3px 3px 5px black);
+  transition: filter 0.3s ease-in-out;
+}
+.tags-page-img img,
+.tags-page-img video {
+  transition: filter 0.3s ease-in-out;
+}
+.sticky-footer {
+  display: flex;
+  min-height: 100vh;
+  flex-direction: column;
+}
+.thumb-blur {
+  filter: blur(10px) grayscale(0.5);
+  transition: filter 0.3s ease-in-out;
+}
+.gallery-image {
+  transition: filter 0.3s ease-in-out;
+}
+.loading-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 50vh;
+  animation: delayed-fade-in 0.3s ease-in-out both;
+}
+@keyframes delayed-fade-in {
+  0%, 80% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+/* Gallery content: hidden while thumbnails load, fades in when ready */
+.gallery-content {
+  opacity: 0;
+  transition: opacity 0.4s ease-in-out;
+  pointer-events: none;
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+.gallery-content.gallery-visible {
+  opacity: 1;
+  pointer-events: auto;
+  position: static;
+  width: auto;
+  height: auto;
+  overflow: visible;
+  clip: auto;
+}
+
+/* Page route transitions */
+.page-fade-enter-active,
+.page-fade-leave-active {
+  transition: opacity 0.25s ease;
+}
+.page-fade-enter-from,
+.page-fade-leave-to {
+  opacity: 0;
+}

@@ -1,0 +1,152 @@
+const API_BASE_URL = '/api'
+
+/**
+ * Custom error class that carries structured API error info.
+ */
+export class ApiError extends Error {
+  /** HTTP status code */
+  status: number
+  /** Machine-readable error code from the API (e.g. 'MediaNotFound') */
+  code: string
+
+  constructor(status: number, code: string, message: string) {
+    super(message)
+    this.name = 'ApiError'
+    this.status = status
+    this.code = code
+  }
+}
+
+/**
+ * Parse a failed API response into an ApiError.
+ * Attempts to read the JSON body for a human-readable `message` field;
+ * falls back to a generic description based on the HTTP status code.
+ */
+async function parseApiError(response: Response, _url: string): Promise<ApiError> {
+  let code = 'UnknownError'
+  let message = ''
+
+  try {
+    const body = await response.json()
+    if (body?.error) code = body.error
+    if (body?.message) message = body.message
+  } catch {
+    // Response body wasn't valid JSON — fall through to defaults
+  }
+
+  if (!message) {
+    switch (response.status) {
+      case 400: message = 'The request was invalid.'; break
+      case 401: message = 'Authentication is required. Please log in.'; break
+      case 403: message = 'You do not have permission to perform this action.'; break
+      case 404: message = 'The requested resource was not found.'; break
+      case 429: message = 'Too many requests. Please wait a moment and try again.'; break
+      case 500: message = 'An internal server error occurred.'; break
+      default:  message = `Request failed (HTTP ${response.status}).`
+    }
+  }
+
+  return new ApiError(response.status, code, message)
+}
+
+/**
+ * Get the stored auth token for protected endpoints.
+ */
+function getAuthToken(): string | null {
+  return sessionStorage.getItem('auth_token')
+}
+
+export function setAuthToken(token: string): void {
+  sessionStorage.setItem('auth_token', token)
+}
+
+export function clearAuthToken(): void {
+  sessionStorage.removeItem('auth_token')
+}
+
+export function hasAuthToken(): boolean {
+  return !!sessionStorage.getItem('auth_token')
+}
+
+export function useApi() {
+  async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
+    // Attach auth token if available
+    const token = getAuthToken()
+    if (token) {
+      const headers = new Headers(options.headers)
+      if (!headers.has('Authorization')) {
+        headers.set('Authorization', `Bearer ${token}`)
+      }
+      options.headers = headers
+    }
+
+    const response = await fetch(`${API_BASE_URL}${url}`, options)
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearAuthToken()
+      }
+      throw await parseApiError(response, url)
+    }
+    return response.json() as Promise<T>
+  }
+
+  function get<T>(url: string): Promise<T> {
+    return request<T>(url)
+  }
+
+  function post<T>(url: string, body: unknown): Promise<T> {
+    return request<T>(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+  }
+
+  function put<T>(url: string, body: unknown): Promise<T> {
+    return request<T>(url, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+  }
+
+  function patch<T>(url: string, body: unknown): Promise<T> {
+    return request<T>(url, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body)
+    })
+  }
+
+  function del<T>(url: string, body?: unknown): Promise<T> {
+    return request<T>(url, {
+      method: 'DELETE',
+      headers: { 'Content-Type': 'application/json' },
+      body: body ? JSON.stringify(body) : undefined
+    })
+  }
+
+  async function upload<T>(url: string, formData: FormData): Promise<T> {
+    const token = getAuthToken()
+    const headers: HeadersInit = {}
+    if (token) {
+      headers['Authorization'] = `Bearer ${token}`
+    }
+
+    const response = await fetch(`${API_BASE_URL}${url}`, {
+      method: 'POST',
+      headers,
+      body: formData
+    })
+
+    if (!response.ok) {
+      if (response.status === 401) {
+        clearAuthToken()
+      }
+      throw await parseApiError(response, url)
+    }
+    return response.json() as Promise<T>
+  }
+
+  return { get, post, put, patch, del, upload }
+}
