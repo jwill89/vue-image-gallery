@@ -33,12 +33,16 @@ class TagController extends AbstractController
     private TagCategoryCollection $category_collection;
     private MediaCollection $media_collection;
 
-    public function __construct(ContainerInterface $container)
-    {
+    public function __construct(
+        ContainerInterface $container,
+        TagCollection $tag_collection,
+        TagCategoryCollection $category_collection,
+        MediaCollection $media_collection
+    ) {
         parent::__construct($container);
-        $this->tag_collection = new TagCollection();
-        $this->category_collection = new TagCategoryCollection();
-        $this->media_collection = new MediaCollection();
+        $this->tag_collection = $tag_collection;
+        $this->category_collection = $category_collection;
+        $this->media_collection = $media_collection;
     }
 
     public function getTag(Request $request, Response $response, array $args): Response
@@ -457,8 +461,12 @@ class TagController extends AbstractController
 
         $tagCount = $this->category_collection->countTags($categoryId);
         if ($tagCount > 0) {
-            return $this->error($response, 'CategoryInUse', 400,
-                "Cannot delete \"{$category->getCategoryName()}\" because {$tagCount} tag(s) belong to it. Reassign them first.");
+            return $this->error(
+                $response,
+                'CategoryInUse',
+                400,
+                "Cannot delete \"{$category->getCategoryName()}\" because {$tagCount} tag(s) belong to it. Reassign them first."
+            );
         }
 
         $deleted = $this->category_collection->delete($category);
@@ -560,8 +568,12 @@ class TagController extends AbstractController
         }
 
         if (!DanbooruTagger::isConfigured()) {
-            return $this->error($response, 'DanbooruNotConfigured', 500,
-                'Danbooru credentials are not configured on the server.');
+            return $this->error(
+                $response,
+                'DanbooruNotConfigured',
+                500,
+                'Danbooru credentials are not configured on the server.'
+            );
         }
 
         $media = $this->media_collection->get($mediaId);
@@ -569,7 +581,7 @@ class TagController extends AbstractController
             return $this->error($response, 'MediaDoesNotExist', 404, 'The media item could not be found.');
         }
 
-        $tagger = new DanbooruTagger();
+        $tagger = $this->container->get(DanbooruTagger::class);
 
         if ($danbooruPostId > 0) {
             // Direct post ID import
@@ -580,10 +592,14 @@ class TagController extends AbstractController
         }
 
         if (!$result['found']) {
-            return $this->error($response, 'NotFoundOnDanbooru', 404,
+            return $this->error(
+                $response,
+                'NotFoundOnDanbooru',
+                404,
                 $danbooruPostId > 0
                     ? "Danbooru post #{$danbooruPostId} could not be found."
-                    : 'This media could not be found on Danbooru by hash or visual similarity.');
+                : 'This media could not be found on Danbooru by hash or visual similarity.'
+            );
         }
 
         $this->invalidateCache('media', 'tags');

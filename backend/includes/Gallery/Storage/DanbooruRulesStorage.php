@@ -3,7 +3,6 @@
 namespace Gallery\Storage;
 
 use PDO;
-use Gallery\Core\DatabaseConnection;
 
 /**
  * DanbooruRulesStorage Class
@@ -16,9 +15,9 @@ class DanbooruRulesStorage
 
     private PDO $db;
 
-    public function __construct()
+    public function __construct(PDO $db)
     {
-        $this->db = DatabaseConnection::getInstance();
+        $this->db = $db;
     }
 
     // ========================================================================

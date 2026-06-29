@@ -7,7 +7,7 @@ require_once(__DIR__ . '/../vendor/autoload.php');
 // Without this, Apache may set CWD to api/ which breaks MediaCollection paths.
 chdir(__DIR__ . '/..');
 
-use DI\Container;
+use DI\ContainerBuilder;
 use Psr\Http\Message\ResponseInterface;
 use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
@@ -22,8 +22,11 @@ use Gallery\Core\Configuration;
 use Gallery\Core\Logger;
 use Gallery\Core\RateLimiter;
 
-// Create Container using PHP-DI
-$container = new Container();
+// Create Container using PHP-DI. Autowiring builds the Storage -> Collection ->
+// Controller graph; dependencies.php supplies the one thing it can't infer (PDO).
+$builder = new ContainerBuilder();
+$builder->addDefinitions(__DIR__ . '/dependencies.php');
+$container = $builder->build();
 
 // Register Container
 AppFactory::setContainer($container);
@@ -116,7 +119,7 @@ $authMiddleware = function (ServerRequestInterface $request, RequestHandlerInter
 
 // Rate Limiting Middleware
 $app->add(function (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface {
-    $rateLimiter = new RateLimiter(120, 60);
+    $rateLimiter = new RateLimiter(\Gallery\Core\DatabaseConnection::getInstance(), 120, 60);
     $ip = $request->getServerParams()['REMOTE_ADDR'] ?? '0.0.0.0';
     $result = $rateLimiter->check($ip);
 
@@ -262,7 +265,7 @@ $app->post('/auth/login[/]', function (ServerRequestInterface $request, Response
 
     // Stricter throttle for login attempts specifically, in its own bucket
     // (separate from the global per-IP limiter) to slow password brute-forcing.
-    $loginLimiter = new RateLimiter(10, 300); // 10 attempts per 5 minutes
+    $loginLimiter = new RateLimiter(\Gallery\Core\DatabaseConnection::getInstance(), 10, 300); // 10 attempts per 5 minutes
     $loginCheck = $loginLimiter->check('login:' . $ip);
     if (!$loginCheck['allowed']) {
         Logger::getInstance()->warning('Login rate limit exceeded', ['ip' => $ip]);

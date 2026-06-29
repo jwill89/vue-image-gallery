@@ -19,11 +19,11 @@ class MediaController extends AbstractController
     private MediaCollection $media_collection;
     private TagCollection $tag_collection;
 
-    public function __construct(ContainerInterface $container)
+    public function __construct(ContainerInterface $container, MediaCollection $media_collection, TagCollection $tag_collection)
     {
         parent::__construct($container);
-        $this->media_collection = new MediaCollection();
-        $this->tag_collection = new TagCollection();
+        $this->media_collection = $media_collection;
+        $this->tag_collection = $tag_collection;
     }
 
     /**
@@ -126,7 +126,9 @@ class MediaController extends AbstractController
         $include_names = [];
         $exclude_names = [];
         foreach ($tag_list as $name) {
-            if ($name === '') continue;
+            if ($name === '') {
+                continue;
+            }
             if (str_starts_with($name, '-')) {
                 $stripped = ltrim(substr($name, 1));
                 if ($stripped !== '') {

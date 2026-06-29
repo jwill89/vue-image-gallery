@@ -30,12 +30,13 @@ SaaS. Key features:
 |------|------|
 | Backend | PHP **8.5** (typed constants, `match`, enums-style consts), [Slim 4](https://www.slimframework.com/) + PHP-DI bridge |
 | Database | **SQLite** (single file at `db/gallery.db`), WAL mode |
-| Migrations | [Phinx](https://phinx.org/) (`db/migrations/`) — but see the drift warning in §10 |
+| Migrations | [Phinx](https://phinx.org/) (`db/migrations/`) — the single source of truth for the schema |
 | Image/video tooling | `ffmpeg` (shelled out via `exec`), PHP GD, `jenssegers/imagehash` |
 | Logging | Monolog (rotating file, 14 days) |
 | Frontend | **Vue 3** (`<script setup>` + Composition API), TypeScript, [Pinia](https://pinia.vuejs.org/), Vue Router |
 | Build | **Vite** (outputs to `frontend/dist`) |
 | Styling | **Bulma 1.x** + custom `style.css` (extended color palette), FontAwesome (kit script) |
+| Tests | **PHPUnit 13** (`backend/tests/`, in-memory SQLite) + **Vitest** (`frontend/src/__tests__/`, happy-dom) |
 
 ---
 
@@ -54,10 +55,13 @@ via `__DIR__`/`chdir(__DIR__ . '/..')`, so `backend/` *is* the app root in both 
 │   ├── .htaccess              # Apache rewrites: dist assets → real files → /api → index.php fallback
 │   ├── composer.json          # PSR-4: Gallery\ → includes/Gallery, Routes\ → api/Routes
 │   ├── phinx.php              # Phinx config (sqlite, db/gallery.db)
+│   ├── phpunit.xml            # PHPUnit 13 config (tests/Unit; coverage source)
+│   ├── phpcs.xml.dist         # PSR-12 ruleset for phpcs / phpcbf
 │   │
 │   ├── api/
 │   │   ├── .htaccess          # Routes everything to api/index.php
 │   │   ├── index.php          # Slim bootstrap: middleware stack + ALL route definitions
+│   │   ├── dependencies.php   # PHP-DI definitions: provides PDO, autowires Storage→Collection→Controller
 │   │   └── Routes/Internal/   # Controllers (namespace Routes\Internal)
 │   │       ├── AbstractController.php   # success()/error()/cachedSuccess()/invalidateCache()/resolveTagIds()
 │   │       ├── MediaController.php      # /media/*  (auth-protected for writes; /by-ids is public)
@@ -81,17 +85,23 @@ via `__DIR__`/`chdir(__DIR__ . '/..')`, so `backend/` *is* the app root in both 
 │   ├── scripts/               # CLI cron/maintenance scripts (gitignored). cron.php = ingest pipeline,
 │   │                          # dupes.php = duplicate scan, tag_imports.php, regenerate-*.php
 │   │
+│   ├── tests/                 # PHPUnit 13 suite
+│   │   ├── Support/           # DatabaseTestCase + schema.sql (fresh in-memory SQLite per test)
+│   │   └── Unit/              # by layer: Structure/, Core/, Storage/
+│   │
 │   ├── vendor/                # Composer deps (gitignored, regenerated on the host)
 │   ├── cache/api/             # File-based response cache (gitignored)
 │   ├── dupes/                 # Duplicate scan JSON reports (gitignored)
 │   ├── logs/                  # Monolog output (gitignored)
-│   ├── .env                   # Config (gitignored, no committed example)
+│   ├── .env                   # Config (gitignored); template committed as .env.example
 │   └── media/
 │       ├── (root)             # cron.php INPUT folder: drop new files here for ingestion
 │       ├── full/              # canonical full-size files (served directly)
 │       └── thumbs/            # generated WebP thumbnails: <base>.webp (200px) and <base>@2x.webp (400px)
 │
 ├── frontend/                  # Vue 3 + Vite source
+│   ├── vite.config.ts         # Vite + Vitest config (build outDir, dev proxy, test block)
+│   ├── vitest.setup.ts        # Vitest setup (pins TZ=UTC)
 │   ├── src/
 │   │   ├── main.ts            # App bootstrap, global error handler, SW registration
 │   │   ├── router/index.ts    # Routes (lazy-loaded views)
@@ -100,10 +110,13 @@ via `__DIR__`/`chdir(__DIR__ . '/..')`, so `backend/` *is* the app root in both 
 │   │   ├── components/        # Reusable UI (GalleryCard, TagBadge, TagMultiSelect, modals…)
 │   │   ├── views/             # Route-level pages
 │   │   ├── constants/categories.ts  # color → CSS class helpers (reads store)
+│   │   ├── __tests__/         # Vitest specs (*.spec.ts): useApi, categories, stores
 │   │   └── style.css          # Custom styles + extended Bulma color palette
 │   ├── public/sw.js           # Service worker (caching + prefetch)
 │   └── dist/                  # Vite build output (gitignored) — index.php serves dist/index.html
 │
+├── .github/workflows/ci.yml   # CI: PHP lint + PHPUnit, frontend build + Vitest (coverage reported)
+├── README.md · CONTRIBUTING.md · CHANGELOG.md · LICENSE
 └── scripts/                   # Dev-only: deploy.ps1 (PuTTY pscp/plink → droplet), gitignored
 ```
 
@@ -136,6 +149,7 @@ falls everything else back to `index.php` (which injects OG tags and serves the 
 ```bash
 cd backend
 composer install              # install PHP deps into backend/vendor/
+composer lint                 # check PSR-12 (phpcs); `composer lint:fix` auto-fixes most issues
 ```
 
 ### Database
@@ -182,7 +196,7 @@ ownership, and clears `cache/api/`. Keeps a `.deploy-backup/` for rollback. Uses
 connections to respect the droplet's `ufw limit ssh`. The webroot is `/var/www/gallery.mathdad.me`
 and *is* the app root (project root === DocumentRoot).
 
-### Config (`backend/.env` — gitignored, no committed example)
+### Config (`backend/.env` — gitignored; template in `backend/.env.example`)
 Keys (resolved by `Gallery\Core\Configuration`):
 ```
 GALLERY_ADMIN_PASSWORD     # admin password; DEFAULTS TO 'changeme' if unset (⚠)
@@ -213,7 +227,7 @@ auth_tokens(token PK, created_at)               # bearer tokens, valid 24h
 rate_limits(ip, requested_at)                   # sliding-window limiter
 ```
 
-Key indexes (see `db/setup.php`): `media(hash)`, `media(file_time DESC, media_id DESC)`,
+Key indexes (defined in `db/migrations/`): `media(hash)`, `media(file_time DESC, media_id DESC)`,
 `media(media_type)`, `media_tags(tag_id, media_id)` (reverse index for tag search),
 `tags(category_id)`, `rate_limits(ip, requested_at)`, `auth_tokens(created_at)`.
 
@@ -365,10 +379,18 @@ which is fine given the token's entropy.
 - **`ffmpeg` must be on PATH** for thumbnail generation; **GD** (with WebP, ideally AVIF) is required
   for SSIM. On hosts where `exec()` is disabled, thumbnails silently won't generate. (Note:
   `php-ffmpeg/php-ffmpeg` was removed from `composer.json` — thumbnails shell out to `ffmpeg` directly.)
-- **No automated tests / CI exist.** There is no test runner configured. If you add tests, wire up
-  the tooling too (`squizlabs/php_codesniffer` and `friendsofphp/php-cs-fixer` are available as dev deps).
-- A historical `IMPROVEMENTS.md` exists (gitignored) and claims "no current issues"; it is a changelog,
-  not a current audit. Don't trust it as the state of the codebase.
+- **CI runs lint, tests, and build.** GitHub Actions (`.github/workflows/ci.yml`) runs
+  `composer lint` (phpcs / PSR-12) + `composer test` (PHPUnit 13) on the backend, and
+  `npm run build` (vue-tsc + Vite) + `npm run test` (Vitest) on the frontend, with coverage
+  reported (no hard gate). Backend tests build a fresh in-memory SQLite DB from
+  `backend/tests/Support/schema.sql` and pass it to Storage/Collection constructors (the app
+  uses **constructor DI** — the PHP-DI container in `api/dependencies.php` supplies `PDO` and
+  autowires the graph). If you change a migration, regenerate `schema.sql` (see CONTRIBUTING.md).
+  Frontend tests are in `src/__tests__/*.spec.ts` (happy-dom). Untested by design: HTTP
+  controllers, and the `ffmpeg`/curl/image-pipeline helpers.
+- Release history lives in `CHANGELOG.md` (Keep a Changelog format). A historical
+  `IMPROVEMENTS.md` also exists (gitignored) — old internal review notes, not a current audit;
+  don't trust it as the state of the codebase.
 
 ---
 
@@ -382,7 +404,7 @@ which is fine given the token's entropy.
 5. If it's a cached GET, use `cachedSuccess`; if it's a mutation, call `invalidateCache`.
 
 **A new media field**
-Update: migration **and** `db/setup.php`, the `Media` structure (+getter/setter),
+Update: a **migration**, the `Media` structure (+getter/setter),
 `MediaStorage` (`store`/`retrieve*` column lists), and the frontend `MediaItem` interface in
 `stores/gallery.ts`.
 
@@ -402,7 +424,7 @@ Create a view in `views/`, add a lazy route with `meta.title` in `router/index.t
 - [ ] Controllers return `success()`/`error()` with a PascalCase error code + human message.
 - [ ] Mutations invalidate the right cache group(s).
 - [ ] New state-changing routes are in an auth-protected group (or you consciously decided otherwise).
-- [ ] Schema changes land in **both** Phinx and `db/setup.php`.
+- [ ] Schema changes land in a **Phinx migration** (never hand-edited into `db/setup.php`).
 - [ ] Frontend: typed, `<script setup>`, API via `useApi`, no direct `fetch`.
 - [ ] Bump `sw.js` `CACHE_VERSION` if caching/asset behavior changed.
 - [ ] Keep frontend/backend mirror lists (colors, extensions, `MediaItem` shape) in sync.

@@ -3,7 +3,6 @@
 namespace Gallery\Storage;
 
 use PDO;
-use Gallery\Core\DatabaseConnection;
 use Gallery\Collection\TagCategoryCollection;
 use Gallery\Structure\Tag;
 use Gallery\Structure\Media;
@@ -22,20 +21,16 @@ class TagStorage
     private const string OBJ_CLASS = Tag::class;
 
     private PDO $db;
-    private ?TagCategoryCollection $categoryCollection = null;
+    private TagCategoryCollection $categoryCollection;
 
-    public function __construct()
+    public function __construct(PDO $db, TagCategoryCollection $categoryCollection)
     {
-        if (!isset($this->db)) {
-            $this->db = DatabaseConnection::getInstance();
-        }
+        $this->db = $db;
+        $this->categoryCollection = $categoryCollection;
     }
 
     private function getCategoryCollection(): TagCategoryCollection
     {
-        if ($this->categoryCollection === null) {
-            $this->categoryCollection = new TagCategoryCollection();
-        }
         return $this->categoryCollection;
     }
 

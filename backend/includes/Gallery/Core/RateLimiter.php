@@ -15,9 +15,9 @@ class RateLimiter
     private int $maxRequests;
     private int $windowSeconds;
 
-    public function __construct(int $maxRequests = 120, int $windowSeconds = 60)
+    public function __construct(PDO $db, int $maxRequests = 120, int $windowSeconds = 60)
     {
-        $this->db = DatabaseConnection::getInstance();
+        $this->db = $db;
         $this->maxRequests = $maxRequests;
         $this->windowSeconds = $windowSeconds;
         $this->ensureTable();

@@ -1,4 +1,8 @@
 {
+    "name": "mathdad/gallery",
+    "description": "A self-hosted personal media gallery for images, GIFs, and videos with Danbooru-style tagging.",
+    "type": "project",
+    "license": "MIT",
     "config": {
         "optimize-autoloader": true,
         "preferred-install": "dist",
@@ -27,11 +31,23 @@
             "Routes\\": ["api/Routes"]
         }
     },
+    "autoload-dev": {
+        "psr-4": {
+            "Gallery\\Tests\\": "tests/"
+        }
+    },
     "require-dev": {
-        "robmorgan/phinx": "^0.16",
-        "roave/security-advisories": "dev-latest",
-        "squizlabs/php_codesniffer": "^4.0",
         "friendsofphp/php-cs-fixer": "^3.0",
-        "phpdocumentor/shim": "^3.0"
+        "phpdocumentor/shim": "^3.0",
+        "phpunit/phpunit": "^13.0",
+        "roave/security-advisories": "dev-latest",
+        "robmorgan/phinx": "^0.16",
+        "squizlabs/php_codesniffer": "^4.0"
+    },
+    "scripts": {
+        "lint": "phpcs",
+        "lint:fix": "phpcbf",
+        "test": "phpunit",
+        "test:coverage": "phpunit --coverage-text"
     }
 }

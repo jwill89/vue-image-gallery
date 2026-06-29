@@ -21,10 +21,10 @@ class DuplicatesController extends AbstractController
 
     private const string DUPES_DIRECTORY = 'dupes/';
 
-    public function __construct(ContainerInterface $container)
+    public function __construct(ContainerInterface $container, MediaCollection $media_collection)
     {
         parent::__construct($container);
-        $this->media_collection = new MediaCollection();
+        $this->media_collection = $media_collection;
     }
 
     /**
@@ -144,7 +144,7 @@ class DuplicatesController extends AbstractController
         $this->logger->info('Duplicate scan initiated');
 
         try {
-            $scanner = new DuplicateScanner();
+            $scanner = new DuplicateScanner($this->getConnection());
             $result = $scanner->run();
 
             $this->logger->info('Duplicate scan completed', $result);

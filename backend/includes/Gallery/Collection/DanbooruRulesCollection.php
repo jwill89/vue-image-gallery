@@ -12,9 +12,9 @@ class DanbooruRulesCollection
 {
     private DanbooruRulesStorage $storage;
 
-    public function __construct()
+    public function __construct(DanbooruRulesStorage $storage)
     {
-        $this->storage = new DanbooruRulesStorage();
+        $this->storage = $storage;
     }
 
     // ── Category Map ────────────────────────────────────────

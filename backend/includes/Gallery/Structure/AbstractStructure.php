@@ -4,6 +4,7 @@ namespace Gallery\Structure;
 
 use JsonSerializable;
 use ReflectionClass;
+use ReflectionProperty;
 
 /**
  * Abstract class AbstractStructure
@@ -44,7 +45,10 @@ abstract class AbstractStructure implements JsonSerializable
     {
         foreach ($params as $property => $value) {
             if (property_exists($this, $property)) {
-                $this->$property = $value;
+                // Assign via reflection: properties are private to the concrete
+                // subclass, so a direct `$this->$property =` from this parent
+                // scope would be rejected. Reflection writes them across scope.
+                (new ReflectionProperty($this, $property))->setValue($this, $value);
             }
         }
     }

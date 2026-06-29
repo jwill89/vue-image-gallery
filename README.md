@@ -5,8 +5,9 @@ Danbooru-style tagging system. It supports tag categories and implications,
 include/exclude tag search, automatic tag importing from Danbooru, perceptual
 duplicate detection, favorites, and admin-gated uploads.
 
-> Looking for architecture details and contribution conventions? See
-> **[AGENTS.md](AGENTS.md)** — the in-depth developer/agent guide.
+> - **[AGENTS.md](AGENTS.md)** — in-depth architecture, data model, and conventions.
+> - **[CONTRIBUTING.md](CONTRIBUTING.md)** — local setup, coding standards, and PR flow.
+> - **[CHANGELOG.md](CHANGELOG.md)** — release history (current version: **2.0.0**).
 
 ---
 
@@ -48,7 +49,7 @@ duplicate detection, favorites, and admin-gated uploads.
    composer install
    ```
 
-2. **Configure the environment** — create a `.env` file in `backend/`:
+2. **Configure the environment** — copy `backend/.env.example` to `backend/.env` and fill it in:
 
    ```dotenv
    # Required: admin password for uploads/deletes. Login is refused if this is unset.

@@ -16,4 +16,3 @@ return [
     ],
     'version_order' => 'creation',
 ];
-

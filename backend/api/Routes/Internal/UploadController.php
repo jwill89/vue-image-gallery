@@ -22,10 +22,10 @@ class UploadController extends AbstractController
     private const array VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'm4v'];
     private const int MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
 
-    public function __construct(ContainerInterface $container)
+    public function __construct(ContainerInterface $container, MediaCollection $media_collection)
     {
         parent::__construct($container);
-        $this->media_collection = new MediaCollection();
+        $this->media_collection = $media_collection;
     }
 
     /**
@@ -53,7 +53,7 @@ class UploadController extends AbstractController
         $all_extensions = array_merge(self::IMAGE_EXTENSIONS, self::VIDEO_EXTENSIONS);
         $target_dir = MediaCollection::getFullDirectory();
 
-        $tagger = $fetchTags ? new DanbooruTagger() : null;
+        $tagger = $fetchTags ? $this->container->get(DanbooruTagger::class) : null;
         $totalTagsApplied = 0;
 
         $results = [];

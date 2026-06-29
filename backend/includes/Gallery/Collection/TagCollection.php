@@ -14,11 +14,9 @@ class TagCollection
 {
     private TagStorage $storage;
 
-    public function __construct()
+    public function __construct(TagStorage $storage)
     {
-        if (!isset($this->storage)) {
-            $this->storage = new TagStorage();
-        }
+        $this->storage = $storage;
     }
 
     public function get(int $tag_id): ?Tag

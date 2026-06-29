@@ -15,14 +15,11 @@ class TagCategoryCollection
     private TagCategoryStorage $storage;
 
     /**
-     * TagCategoryCollection constructor.
-     * Initializes the TagCategoryStorage object.
+     * TagCategoryCollection constructor. The storage is injected.
      */
-    public function __construct()
+    public function __construct(TagCategoryStorage $storage)
     {
-        if (!isset($this->storage)) {
-            $this->storage = new TagCategoryStorage();
-        }
+        $this->storage = $storage;
     }
 
     /**

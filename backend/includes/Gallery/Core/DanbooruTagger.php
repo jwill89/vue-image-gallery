@@ -58,13 +58,12 @@ class DanbooruTagger
         }
     }
 
-    public function __construct()
+    public function __construct(PDO $db, DanbooruRulesCollection $rulesCollection)
     {
-        $this->db = DatabaseConnection::getInstance();
+        $this->db = $db;
         $this->login = Configuration::getDanbooruLogin();
         $this->apiKey = Configuration::getDanbooruApiKey();
 
-        $rulesCollection = new DanbooruRulesCollection();
         $this->categoryMap = $rulesCollection->getCategoryMapWithFields();
         $this->tagNameMap = $rulesCollection->getTagMapArray();
 
@@ -374,7 +373,7 @@ class DanbooruTagger
 
         $response = curl_exec($ch);
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-        curl_close($ch);
+        unset($ch);
 
         if ($httpCode === 200 && $response) {
             return json_decode($response, true);

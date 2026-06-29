@@ -17,11 +17,11 @@ class DanbooruController extends AbstractController
     private DanbooruRulesCollection $rules;
     private TagCategoryCollection $categories;
 
-    public function __construct(ContainerInterface $container)
+    public function __construct(ContainerInterface $container, DanbooruRulesCollection $rules, TagCategoryCollection $categories)
     {
         parent::__construct($container);
-        $this->rules = new DanbooruRulesCollection();
-        $this->categories = new TagCategoryCollection();
+        $this->rules = $rules;
+        $this->categories = $categories;
     }
 
     // ========================================================================

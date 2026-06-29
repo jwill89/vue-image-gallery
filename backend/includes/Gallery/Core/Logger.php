@@ -40,5 +40,3 @@ class Logger
         return self::$instance;
     }
 }
-
-

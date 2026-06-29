@@ -3,7 +3,6 @@
 namespace Gallery\Storage;
 
 use PDO;
-use Gallery\Core\DatabaseConnection;
 use Gallery\Structure\TagCategory;
 use Gallery\Structure\Tag;
 
@@ -24,14 +23,11 @@ class TagCategoryStorage
     private PDO $db;
 
     /**
-     * Class constructor
-     * Initializes the Database Connection.
+     * Class constructor. The PDO connection is injected.
      */
-    public function __construct()
+    public function __construct(PDO $db)
     {
-        if (!isset($this->db)) {
-            $this->db = DatabaseConnection::getInstance();
-        }
+        $this->db = $db;
     }
 
     /**
@@ -174,13 +170,17 @@ class TagCategoryStorage
             "SELECT category_id FROM " . self::MAIN_TABLE . " WHERE category_name = :n COLLATE NOCASE AND category_id != :eid"
         );
         $stmt->execute([':n' => $name, ':eid' => $excludeId]);
-        if ($stmt->fetchColumn()) $conflicts[] = 'name';
+        if ($stmt->fetchColumn()) {
+            $conflicts[] = 'name';
+        }
 
         $stmt = $this->db->prepare(
             "SELECT category_id FROM " . self::MAIN_TABLE . " WHERE category_short = :s COLLATE NOCASE AND category_id != :eid"
         );
         $stmt->execute([':s' => $short, ':eid' => $excludeId]);
-        if ($stmt->fetchColumn()) $conflicts[] = 'short';
+        if ($stmt->fetchColumn()) {
+            $conflicts[] = 'short';
+        }
 
         return $conflicts;
     }

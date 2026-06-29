@@ -31,11 +31,9 @@ class MediaCollection
 
     private MediaStorage $storage;
 
-    public function __construct()
+    public function __construct(MediaStorage $storage)
     {
-        if (!isset($this->storage)) {
-            $this->storage = new MediaStorage();
-        }
+        $this->storage = $storage;
     }
 
     /**

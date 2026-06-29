@@ -18,14 +18,16 @@ use Gallery\Collection\MediaCollection;
  */
 class DuplicateScanner
 {
+    private PDO $db;
     private int $maxDistance;
     private string $reportDirectory;
 
     /** Number of bits per band for LSH. 8 bits = 8 bands over a 64-bit hash. */
     private int $bandBits;
 
-    public function __construct(int $maxDistance = 2, string $reportDirectory = 'dupes/', int $bandBits = 8)
+    public function __construct(PDO $db, int $maxDistance = 2, string $reportDirectory = 'dupes/', int $bandBits = 8)
     {
+        $this->db = $db;
         $this->maxDistance = $maxDistance;
         $this->reportDirectory = $reportDirectory;
         $this->bandBits = $bandBits;
@@ -50,7 +52,7 @@ class DuplicateScanner
         // ──────────────────────────────────────────────
         // Load only the fields we need — no full Media objects
         // ──────────────────────────────────────────────
-        $db = DatabaseConnection::getInstance();
+        $db = $this->db;
         $stmt = $db->query(
             "SELECT media_id, file_name, bits_fingerprint
              FROM media
@@ -155,7 +157,9 @@ class DuplicateScanner
         usort($matches, function ($a, $b) {
             if ($a[3] !== null && $b[3] !== null) {
                 $ssimCmp = $b[3] <=> $a[3];
-                if ($ssimCmp !== 0) return $ssimCmp;
+                if ($ssimCmp !== 0) {
+                    return $ssimCmp;
+                }
             }
             return $a[2] <=> $b[2];
         });
@@ -220,7 +224,9 @@ class DuplicateScanner
             // hash segment and would generate O(n^2) spurious candidates
             foreach ($buckets as $ids) {
                 $count = count($ids);
-                if ($count < 2 || $count > 100) continue;
+                if ($count < 2 || $count > 100) {
+                    continue;
+                }
 
                 for ($i = 0; $i < $count; $i++) {
                     for ($j = $i + 1; $j < $count; $j++) {
@@ -298,7 +304,9 @@ class DuplicateScanner
     private function loadImage(string $path): ?\GdImage
     {
         $info = @getimagesize($path);
-        if ($info === false) return null;
+        if ($info === false) {
+            return null;
+        }
 
         $type = $info[2];
 
@@ -408,7 +416,7 @@ class DuplicateScanner
         $dismissed = [];
 
         try {
-            $db = DatabaseConnection::getInstance();
+            $db = $this->db;
             $stmt = $db->query('SELECT media_id_1, media_id_2 FROM dismissed_duplicates');
 
             while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
