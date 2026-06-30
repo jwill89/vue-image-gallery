@@ -81,7 +81,7 @@ class MediaMetadata
         );
 
         $output = shell_exec($cmd);
-        if ($output === null || $output === '') {
+        if ($output === null || $output === false || $output === '') {
             return null;
         }
 

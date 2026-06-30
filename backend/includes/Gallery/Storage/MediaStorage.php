@@ -24,6 +24,8 @@ class MediaStorage
 
     /**
      * Retrieves a single media item by ID, or all items if no ID is given.
+     *
+     * @return ($media_id is null ? Media[] : Media|null)
      */
     public function retrieve(?int $media_id = null): Media|array|null
     {
@@ -63,6 +65,9 @@ class MediaStorage
 
     /**
      * Retrieves paginated media filtered by tags (all must match).
+     *
+     * @param int[] $tag_ids
+     * @return Media[]
      */
     public function retrieveWithTags(array $tag_ids, int $page_number, int $items_per_page): array
     {
@@ -94,6 +99,10 @@ class MediaStorage
 
     /**
      * Retrieves paginated media matching included tags and/or excluding excluded tags.
+     *
+     * @param int[] $include_tag_ids
+     * @param int[] $exclude_tag_ids
+     * @return Media[]
      */
     public function retrieveWithTagFilter(array $include_tag_ids, array $exclude_tag_ids, int $page_number, int $items_per_page): array
     {
@@ -143,6 +152,9 @@ class MediaStorage
 
     /**
      * Gets the total number of media matching included and/or excluded tags.
+     *
+     * @param int[] $include_tag_ids
+     * @param int[] $exclude_tag_ids
      */
     public function retrieveTotalWithTagFilterCount(array $include_tag_ids, array $exclude_tag_ids): int
     {
@@ -189,6 +201,8 @@ class MediaStorage
 
     /**
      * Retrieves paginated media items.
+     *
+     * @return Media[]
      */
     public function retrieveForPage(int $page_number, int $items_per_page): array
     {
@@ -216,6 +230,8 @@ class MediaStorage
 
     /**
      * Retrieves paginated media that have no tags applied.
+     *
+     * @return Media[]
      */
     public function retrieveUntaggedForPage(int $page_number, int $items_per_page): array
     {
@@ -249,6 +265,8 @@ class MediaStorage
 
     /**
      * Gets the total number of media items with specific tags.
+     *
+     * @param int[] $tag_ids
      */
     public function retrieveTotalWithTagsCount(array $tag_ids): int
     {
@@ -327,6 +345,8 @@ class MediaStorage
     /**
      * Retrieves a lightweight summary of all media items.
      * Used by cron.php for orphan detection.
+     *
+     * @return list<array<string, mixed>>
      */
     public function retrieveSummary(?string $media_type = null): array
     {
@@ -339,7 +359,10 @@ class MediaStorage
         }
         $stmt->execute();
 
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // fetchAll(FETCH_ASSOC) is typed as plain array by PHPStan; assert the row shape.
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return $rows;
     }
 
     /**
@@ -375,25 +398,25 @@ class MediaStorage
      */
     public function store(Media $media): int
     {
-        if (empty($media->getMediaId())) {
+        if (empty($media->media_id)) {
             $sql = "INSERT INTO " . self::MAIN_TABLE . " (media_type, file_name, file_time, hash, bits_fingerprint, width, height, duration, file_size)
                     VALUES (:media_type, :file_name, :file_time, :hash, :bits_fingerprint, :width, :height, :duration, :file_size)";
             $stmt = $this->db->prepare($sql);
-            $stmt->bindValue(':media_type', $media->getMediaType(), PDO::PARAM_STR);
-            $stmt->bindValue(':file_name', $media->getFileName(), PDO::PARAM_STR);
-            $stmt->bindValue(':file_time', $media->getFileTime(), PDO::PARAM_INT);
-            $stmt->bindValue(':hash', $media->getHash(), PDO::PARAM_STR);
-            $stmt->bindValue(':bits_fingerprint', $media->getBitsFingerprint(), PDO::PARAM_STR);
-            $stmt->bindValue(':width', $media->getWidth(), PDO::PARAM_INT);
-            $stmt->bindValue(':height', $media->getHeight(), PDO::PARAM_INT);
-            $stmt->bindValue(':duration', $media->getDuration());
-            $stmt->bindValue(':file_size', $media->getFileSize(), PDO::PARAM_INT);
+            $stmt->bindValue(':media_type', $media->media_type, PDO::PARAM_STR);
+            $stmt->bindValue(':file_name', $media->file_name, PDO::PARAM_STR);
+            $stmt->bindValue(':file_time', $media->file_time, PDO::PARAM_INT);
+            $stmt->bindValue(':hash', $media->hash, PDO::PARAM_STR);
+            $stmt->bindValue(':bits_fingerprint', $media->bits_fingerprint, PDO::PARAM_STR);
+            $stmt->bindValue(':width', $media->width, PDO::PARAM_INT);
+            $stmt->bindValue(':height', $media->height, PDO::PARAM_INT);
+            $stmt->bindValue(':duration', $media->duration);
+            $stmt->bindValue(':file_size', $media->file_size, PDO::PARAM_INT);
 
             $stmt->execute();
             $media->setMediaId((int)$this->db->lastInsertId());
         }
 
-        return $media->getMediaId();
+        return $media->media_id;
     }
 
     /**
@@ -406,11 +429,11 @@ class MediaStorage
                 SET width = :width, height = :height, duration = :duration, file_size = :file_size
                 WHERE media_id = :media_id";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(':width', $media->getWidth(), PDO::PARAM_INT);
-        $stmt->bindValue(':height', $media->getHeight(), PDO::PARAM_INT);
-        $stmt->bindValue(':duration', $media->getDuration());
-        $stmt->bindValue(':file_size', $media->getFileSize(), PDO::PARAM_INT);
-        $stmt->bindValue(':media_id', $media->getMediaId(), PDO::PARAM_INT);
+        $stmt->bindValue(':width', $media->width, PDO::PARAM_INT);
+        $stmt->bindValue(':height', $media->height, PDO::PARAM_INT);
+        $stmt->bindValue(':duration', $media->duration);
+        $stmt->bindValue(':file_size', $media->file_size, PDO::PARAM_INT);
+        $stmt->bindValue(':media_id', $media->media_id, PDO::PARAM_INT);
 
         return $stmt->execute();
     }
@@ -422,7 +445,7 @@ class MediaStorage
     {
         $sql = "DELETE FROM " . self::MAIN_TABLE . " WHERE media_id = :media_id";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(':media_id', $media->getMediaId(), PDO::PARAM_INT);
+        $stmt->bindValue(':media_id', $media->media_id, PDO::PARAM_INT);
 
         return $stmt->execute();
     }

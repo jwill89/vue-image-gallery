@@ -1,17 +1,21 @@
 <?php
 
-namespace Gallery\Storage;
+namespace Gallery\Repository;
 
 use PDO;
-use Gallery\Collection\TagCategoryCollection;
 use Gallery\Structure\Tag;
+use Gallery\Structure\TagCategory;
 use Gallery\Structure\Media;
 
 /**
- * TagStorage Class
- * Manages tag storage in the database with unified media_tags junction table.
+ * TagRepository
+ *
+ * Persistence for tags and the unified media_tags junction table. This unifies
+ * what used to be the TagCollection (public API) and TagStorage (SQL) layers:
+ * the collection was a 1:1 pass-through, so the two are now one class exposing
+ * the clean collection-style verbs directly over PDO.
  */
-class TagStorage
+class TagRepository
 {
     private const string MAIN_TABLE = 'tags';
     private const string MEDIA_TAG_TABLE = 'media_tags';
@@ -21,47 +25,46 @@ class TagStorage
     private const string OBJ_CLASS = Tag::class;
 
     private PDO $db;
-    private TagCategoryCollection $categoryCollection;
+    private TagCategoryRepository $categoryRepository;
 
-    public function __construct(PDO $db, TagCategoryCollection $categoryCollection)
+    public function __construct(PDO $db, TagCategoryRepository $categoryRepository)
     {
         $this->db = $db;
-        $this->categoryCollection = $categoryCollection;
-    }
-
-    private function getCategoryCollection(): TagCategoryCollection
-    {
-        return $this->categoryCollection;
+        $this->categoryRepository = $categoryRepository;
     }
 
     /**
-     * Retrieves a tag or all tags from the database.
+     * Gets a tag by ID.
      */
-    public function retrieve(?int $tag_id = null): Tag|array|null
+    public function get(int $tag_id): ?Tag
     {
-        $where = ($tag_id !== null) ? " WHERE tag_id = :tag_id" : "";
-        $sql = "SELECT * FROM " . self::MAIN_TABLE . "$where ORDER BY tag_name ASC";
-
+        $sql = "SELECT * FROM " . self::MAIN_TABLE . " WHERE tag_id = :tag_id ORDER BY tag_name ASC";
         $stmt = $this->db->prepare($sql);
-
-        if ($tag_id !== null) {
-            $stmt->bindParam(':tag_id', $tag_id, PDO::PARAM_INT);
-        }
-
+        $stmt->bindValue(':tag_id', $tag_id, PDO::PARAM_INT);
         $stmt->execute();
         $tags = $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
 
-        if ($tag_id !== null) {
-            return count($tags) === 1 ? $tags[0] : null;
-        }
-
-        return $tags;
+        return count($tags) === 1 ? $tags[0] : null;
     }
 
     /**
-     * Retrieves a tag by name.
+     * Gets all tags, ordered by name.
+     *
+     * @return Tag[]
      */
-    public function retrieveByName(string $tag_name): ?Tag
+    public function getAll(): array
+    {
+        $sql = "SELECT * FROM " . self::MAIN_TABLE . " ORDER BY tag_name ASC";
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute();
+
+        return $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
+    }
+
+    /**
+     * Gets a tag by name, or null if none exists.
+     */
+    public function getByName(string $tag_name): ?Tag
     {
         $sql = "SELECT * FROM " . self::MAIN_TABLE . " WHERE tag_name = :tag_name";
         $stmt = $this->db->prepare($sql);
@@ -81,7 +84,7 @@ class TagStorage
      * @param string[] $tag_names
      * @return int[] Matched tag IDs (order not guaranteed).
      */
-    public function retrieveIdsByNames(array $tag_names): array
+    public function getIdsByNames(array $tag_names): array
     {
         $names = array_values(array_filter(array_map('trim', $tag_names), fn($n) => $n !== ''));
         if (empty($names)) {
@@ -103,7 +106,7 @@ class TagStorage
      * @param int[] $tag_ids
      * @return int[] Existing tag IDs (de-duplicated; order not guaranteed).
      */
-    public function retrieveExistingIds(array $tag_ids): array
+    public function getExistingIds(array $tag_ids): array
     {
         $ids = array_values(array_unique(array_filter(array_map('intval', $tag_ids), fn($id) => $id > 0)));
         if (empty($ids)) {
@@ -120,19 +123,27 @@ class TagStorage
 
     /**
      * Retrieves a tag if it exists, or creates and stores it.
+     *
+     * A "shortcode:name" prefix assigns the tag to the matching category;
+     * otherwise the tag lands in the default category (ID 1).
      */
-    public function retrieveOrCreate(string $tag_name): Tag
+    public function getOrCreate(string $tag_name): Tag
     {
         $tag_name = strtolower($tag_name);
 
+        // $name defaults to the full tag name; a "shortcode:name" prefix splits
+        // it into a category shortcode and the bare name. Initializing it up
+        // front keeps it defined on every path (the category branch below only
+        // runs when the colon form set it).
+        $name = $tag_name;
+        $category = null;
+
         if (str_contains($tag_name, ':')) {
             [$category_shortcode, $name] = array_map('trim', explode(':', $tag_name, 2));
-            $category = $this->getCategoryCollection()->getByShortcode($category_shortcode);
-        } else {
-            $category = null;
+            $category = $this->categoryRepository->getByShortcode($category_shortcode);
         }
 
-        $tag_exists = ($category instanceof \Gallery\Structure\TagCategory) ? $this->retrieveByName($name) : $this->retrieveByName($tag_name);
+        $tag_exists = ($category instanceof TagCategory) ? $this->getByName($name) : $this->getByName($tag_name);
 
         if ($tag_exists instanceof Tag) {
             return $tag_exists;
@@ -140,22 +151,23 @@ class TagStorage
 
         $tag = new Tag();
 
-        if ($category instanceof \Gallery\Structure\TagCategory) {
-            $tag->setTagName($name)->setCategoryId($category->getCategoryId());
+        if ($category instanceof TagCategory) {
+            $tag->setTagName($name)->setCategoryId($category->category_id);
         } else {
             $tag->setTagName($tag_name)->setCategoryId(1);
         }
 
-        $tag_id = $this->store($tag);
-        $tag->setTagId($tag_id);
+        $tag->setTagId($this->save($tag));
 
         return $tag;
     }
 
     /**
-     * Get tags for a given media item.
+     * Gets all tags for a given media item.
+     *
+     * @return Tag[]
      */
-    public function retrieveTagsForMedia(Media $media): array
+    public function getTagsForMedia(Media $media): array
     {
         $sql = "SELECT tt.* FROM " . self::MAIN_TABLE . " tt
                     LEFT JOIN " . self::MEDIA_TAG_TABLE . " mt USING (tag_id)
@@ -164,16 +176,18 @@ class TagStorage
                     ORDER BY tc.sort_order ASC, tt.tag_name ASC";
 
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(':media_id', $media->getMediaId(), PDO::PARAM_INT);
+        $stmt->bindValue(':media_id', $media->media_id, PDO::PARAM_INT);
         $stmt->execute();
 
         return $stmt->fetchAll(PDO::FETCH_CLASS, self::OBJ_CLASS);
     }
 
     /**
-     * Get all tags with category and usage counts for the tags page.
+     * Gets all tags with category and usage counts for the tags page.
+     *
+     * @return list<array<string, mixed>>
      */
-    public function retrieveAllTagsForPage(): array
+    public function getAllForPage(): array
     {
         $sql = "SELECT t.tag_id, t.tag_name, t.category_id, tc.category_name,
                 COALESCE(mc.media_count, 0) AS media_count,
@@ -181,17 +195,47 @@ class TagStorage
              FROM " . self::MAIN_TABLE . " t
              LEFT JOIN " . self::CATEGORIES_TABLE . " tc USING (category_id)
              LEFT JOIN (SELECT tag_id, COUNT(*) AS media_count FROM " . self::MEDIA_TAG_TABLE . " GROUP BY tag_id) mc ON mc.tag_id = t.tag_id
-             LEFT JOIN (SELECT tag_id, COUNT(*) AS implication_count FROM tag_implications GROUP BY tag_id) imp ON imp.tag_id = t.tag_id
+             LEFT JOIN (SELECT tag_id, COUNT(*) AS implication_count FROM " . self::IMPLICATIONS_TABLE . " GROUP BY tag_id) imp ON imp.tag_id = t.tag_id
              ORDER BY tc.sort_order ASC, t.tag_name ASC";
 
         $stmt = $this->db->prepare($sql);
         $stmt->execute();
 
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // fetchAll(FETCH_ASSOC) is typed as plain array by PHPStan; assert the row shape.
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return $rows;
     }
 
     /**
-     * Add tags to a media item. Resolves implications transitively.
+     * Gets the total number of tags.
+     */
+    public function totalTags(): int
+    {
+        $sql = "SELECT COUNT(*) FROM " . self::MAIN_TABLE;
+        $stmt = $this->db->prepare($sql);
+        $stmt->execute();
+
+        return (int)$stmt->fetchColumn();
+    }
+
+    /**
+     * Checks whether a tag exists by name (case-insensitive).
+     */
+    public function tagExists(string $tag_name): bool
+    {
+        $sql = "SELECT 1 FROM " . self::MAIN_TABLE . " WHERE tag_name = :tag_name LIMIT 1";
+        $stmt = $this->db->prepare($sql);
+        $stmt->bindValue(':tag_name', $tag_name, PDO::PARAM_STR);
+        $stmt->execute();
+
+        return (int)$stmt->fetchColumn() === 1;
+    }
+
+    /**
+     * Adds tags to a media item, resolving implications transitively.
+     *
+     * @param int[] $tag_ids
      */
     public function addTagsToMedia(Media $media, array $tag_ids): bool
     {
@@ -202,7 +246,7 @@ class TagStorage
         }
 
         $sql = "INSERT OR IGNORE INTO " . self::MEDIA_TAG_TABLE . " (media_id, tag_id) VALUES (:media_id, :tag_id)";
-        $media_id = $media->getMediaId();
+        $media_id = $media->media_id;
 
         // Wrap the batch insert in a transaction so a mid-loop failure can't
         // leave the media item with a partial set of (implied) tags applied.
@@ -223,84 +267,64 @@ class TagStorage
     /**
      * Removes a tag from a media item.
      */
+    #[\NoDiscard('a false return signals the tag was not removed')]
     public function removeTagFromMedia(Media $media, Tag $tag): bool
     {
         $sql = "DELETE FROM " . self::MEDIA_TAG_TABLE . " WHERE media_id = :media_id AND tag_id = :tag_id";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(':media_id', $media->getMediaId(), PDO::PARAM_INT);
-        $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
+        $stmt->bindValue(':media_id', $media->media_id, PDO::PARAM_INT);
+        $stmt->bindValue(':tag_id', $tag->tag_id, PDO::PARAM_INT);
 
         return $stmt->execute();
     }
 
     /**
-     * Gets the total number of tags.
+     * Saves a tag (insert or update) and returns its ID.
      */
-    public function retrieveTotalTagCount(): int
+    public function save(Tag $tag): int
     {
-        $sql = "SELECT COUNT(*) FROM " . self::MAIN_TABLE;
-        $stmt = $this->db->prepare($sql);
-        $stmt->execute();
-
-        return (int)$stmt->fetchColumn();
-    }
-
-    /**
-     * Check if a tag exists by name.
-     */
-    public function tagExists(string $tag_name): bool
-    {
-        $sql = "SELECT 1 FROM " . self::MAIN_TABLE . " WHERE tag_name = :tag_name LIMIT 1";
-        $stmt = $this->db->prepare($sql);
-        $stmt->bindParam(':tag_name', $tag_name, PDO::PARAM_STR);
-        $stmt->execute();
-
-        return (int)$stmt->fetchColumn() === 1;
-    }
-
-    /**
-     * Saves a tag to the database.
-     */
-    public function store(Tag $tag): int
-    {
-        if (empty($tag->getTagId())) {
+        if (empty($tag->tag_id)) {
             $sql = "INSERT INTO " . self::MAIN_TABLE . " (category_id, tag_name) VALUES (:category_id, :tag_name)";
         } else {
             $sql = "UPDATE " . self::MAIN_TABLE . " SET category_id = :category_id, tag_name = :tag_name WHERE tag_id = :tag_id";
         }
 
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(':category_id', $tag->getCategoryId(), PDO::PARAM_INT);
-        $stmt->bindValue(':tag_name', $tag->getTagName(), PDO::PARAM_STR);
+        $stmt->bindValue(':category_id', $tag->category_id, PDO::PARAM_INT);
+        $stmt->bindValue(':tag_name', $tag->tag_name, PDO::PARAM_STR);
 
-        if (!empty($tag->getTagId())) {
-            $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
+        if (!empty($tag->tag_id)) {
+            $stmt->bindValue(':tag_id', $tag->tag_id, PDO::PARAM_INT);
         }
 
-        if ($stmt->execute() && empty($tag->getTagId())) {
+        if ($stmt->execute() && empty($tag->tag_id)) {
             $tag->setTagId((int)$this->db->lastInsertId());
         }
 
-        return $tag->getTagId();
+        return $tag->tag_id;
     }
 
     /**
-     * Deletes a tag from the database.
+     * Deletes a tag.
      */
+    #[\NoDiscard('a false return signals the tag was not deleted')]
     public function delete(Tag $tag): bool
     {
         $sql = "DELETE FROM " . self::MAIN_TABLE . " WHERE tag_id = :tag_id";
         $stmt = $this->db->prepare($sql);
-        $stmt->bindValue(':tag_id', $tag->getTagId(), PDO::PARAM_INT);
+        $stmt->bindValue(':tag_id', $tag->tag_id, PDO::PARAM_INT);
 
         return $stmt->execute();
     }
 
     // ========================================================================
-    // Tag Implication Methods
+    // Tag Implications
     // ========================================================================
 
-    public function retrieveAllImplications(): array
+    /**
+     * @return list<array<string, mixed>>
+     */
+    public function getAllImplications(): array
     {
         $sql = "SELECT ti.tag_id, t1.tag_name, ti.implied_tag_id, t2.tag_name AS implied_tag_name
                 FROM " . self::IMPLICATIONS_TABLE . " ti
@@ -309,7 +333,10 @@ class TagStorage
                 ORDER BY t1.tag_name ASC, t2.tag_name ASC";
 
         $stmt = $this->db->query($sql);
-        return $stmt->fetchAll(PDO::FETCH_ASSOC);
+        // fetchAll(FETCH_ASSOC) is typed as plain array by PHPStan; assert the row shape.
+        /** @var list<array<string, mixed>> $rows */
+        $rows = $stmt->fetchAll(PDO::FETCH_ASSOC);
+        return $rows;
     }
 
     public function addImplication(int $tag_id, int $implied_tag_id): bool
@@ -341,6 +368,12 @@ class TagStorage
         return $stmt->execute();
     }
 
+    /**
+     * Resolves the full transitive implication closure for a set of seed tag IDs.
+     *
+     * @param int[] $tag_ids
+     * @return int[]
+     */
     public function resolveImpliedTagIds(array $tag_ids): array
     {
         $seeds = array_values(array_unique(array_map('intval', $tag_ids)));
@@ -368,12 +401,13 @@ class TagStorage
     }
 
     /**
-     * Migrate all usages of one tag to another (unified media_tags table).
+     * Migrates all usages of one tag to another (unified media_tags table).
      */
+    #[\NoDiscard('a false return signals the migration was rolled back')]
     public function migrateTag(Tag $sourceTag, Tag $targetTag): bool
     {
-        $sourceId = $sourceTag->getTagId();
-        $targetId = $targetTag->getTagId();
+        $sourceId = $sourceTag->tag_id;
+        $targetId = $targetTag->tag_id;
 
         $this->db->beginTransaction();
 

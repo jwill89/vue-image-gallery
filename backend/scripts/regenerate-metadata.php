@@ -40,22 +40,22 @@ $db->beginTransaction();
 try {
     foreach ($all_media as $i => $media) {
         $num = $i + 1;
-        $source = $full_dir . $media->getFileName();
+        $source = $full_dir . $media->file_name;
 
         if (!file_exists($source)) {
-            echo "  [{$num}/{$total}] SKIP (missing): {$media->getFileName()}\n";
+            echo "  [{$num}/{$total}] SKIP (missing): {$media->file_name}\n";
             $failed++;
             continue;
         }
 
         if ($media_collection->refreshMetadata($media)) {
-            echo "  [{$num}/{$total}] OK: {$media->getFileName()} "
-                . "({$media->getWidth()}x{$media->getHeight()}"
-                . ($media->getDuration() > 0 ? ", {$media->getDuration()}s" : '')
+            echo "  [{$num}/{$total}] OK: {$media->file_name} "
+                . "({$media->width}x{$media->height}"
+                . ($media->duration > 0 ? ", {$media->duration}s" : '')
                 . ")\n";
             $success++;
         } else {
-            echo "  [{$num}/{$total}] FAIL: {$media->getFileName()}\n";
+            echo "  [{$num}/{$total}] FAIL: {$media->file_name}\n";
             $failed++;
         }
     }

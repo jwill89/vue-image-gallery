@@ -62,21 +62,21 @@ $success = 0;
 $failed = 0;
 
 foreach ($all_media as $i => $media) {
-    $source = $full_dir . $media->getFileName();
+    $source = $full_dir . $media->file_name;
     $num = $i + 1;
 
     if (!file_exists($source)) {
-        echo "  [{$num}/{$total}] SKIP (missing): {$media->getFileName()}\n";
+        echo "  [{$num}/{$total}] SKIP (missing): {$media->file_name}\n";
         $failed++;
         continue;
     }
 
     try {
         $media_collection->createThumbnail($media, $full_dir);
-        echo "  [{$num}/{$total}] OK: {$media->getFileName()}\n";
+        echo "  [{$num}/{$total}] OK: {$media->file_name}\n";
         $success++;
     } catch (Exception $e) {
-        echo "  [{$num}/{$total}] FAIL: {$media->getFileName()} - {$e->getMessage()}\n";
+        echo "  [{$num}/{$total}] FAIL: {$media->file_name} - {$e->getMessage()}\n";
         $failed++;
     }
 }

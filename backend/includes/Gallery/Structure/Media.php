@@ -5,49 +5,23 @@ namespace Gallery\Structure;
 /**
  * Media class
  * Unified structure representing any media item (image or video) in the gallery.
+ *
+ * Properties use asymmetric visibility (PHP 8.4): reads are public
+ * (e.g. $media->file_name), writes go through the fluent setters. private(set)
+ * lets PDO's FETCH_CLASS hydrate rows while blocking external mutation.
  */
 class Media extends AbstractStructure
 {
-    private int $media_id = 0;
-    private string $media_type = 'image'; // 'image' or 'video'
-    private string $file_name = '';
-    private int $file_time = 0;
-    private string $hash = '';
-    private string $bits_fingerprint = '';
-    private int $width = 0;
-    private int $height = 0;
-    private float $duration = 0.0;   // seconds; 0 for still images
-    private int $file_size = 0;      // bytes
-
-    public function getMediaId(): int
-    {
-        return $this->media_id;
-    }
-
-    public function getMediaType(): string
-    {
-        return $this->media_type;
-    }
-
-    public function getFileName(): string
-    {
-        return $this->file_name;
-    }
-
-    public function getFileTime(): int
-    {
-        return $this->file_time;
-    }
-
-    public function getHash(): string
-    {
-        return $this->hash;
-    }
-
-    public function getBitsFingerprint(): string
-    {
-        return $this->bits_fingerprint;
-    }
+    public private(set) int $media_id = 0;
+    public private(set) string $media_type = 'image'; // 'image' or 'video'
+    public private(set) string $file_name = '';
+    public private(set) int $file_time = 0;
+    public private(set) string $hash = '';
+    public private(set) string $bits_fingerprint = '';
+    public private(set) int $width = 0;
+    public private(set) int $height = 0;
+    public private(set) float $duration = 0.0;   // seconds; 0 for still images
+    public private(set) int $file_size = 0;      // bytes
 
     public function setMediaId(int $media_id): self
     {
@@ -83,26 +57,6 @@ class Media extends AbstractStructure
     {
         $this->bits_fingerprint = $bits_fingerprint;
         return $this;
-    }
-
-    public function getWidth(): int
-    {
-        return $this->width;
-    }
-
-    public function getHeight(): int
-    {
-        return $this->height;
-    }
-
-    public function getDuration(): float
-    {
-        return $this->duration;
-    }
-
-    public function getFileSize(): int
-    {
-        return $this->file_size;
     }
 
     public function setWidth(int $width): self

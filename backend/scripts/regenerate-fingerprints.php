@@ -50,7 +50,7 @@ $updateStmt = $db->prepare('UPDATE media SET bits_fingerprint = :fp WHERE media_
 
 foreach (array_values($images) as $i => $media) {
     $num = $i + 1;
-    $fileName = $media->getFileName();
+    $fileName = $media->file_name;
     $filePath = MediaCollection::MEDIA_DIRECTORY_FULL . $fileName;
 
     if (!file_exists($filePath)) {
@@ -61,11 +61,11 @@ foreach (array_values($images) as $i => $media) {
 
     try {
         $media_collection->createFingerprint($media, MediaCollection::MEDIA_DIRECTORY_FULL);
-        $fp = $media->getBitsFingerprint();
+        $fp = $media->bits_fingerprint;
 
         $updateStmt->execute([
             ':fp' => $fp,
-            ':id' => $media->getMediaId(),
+            ':id' => $media->media_id,
         ]);
 
         echo "  [{$num}/{$total}] OK: {$fileName}\n";

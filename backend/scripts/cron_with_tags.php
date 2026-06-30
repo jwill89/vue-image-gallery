@@ -57,6 +57,9 @@ const TAG_NAME_MAP = [
 // Danbooru Helper Functions
 // ============================================================
 
+/**
+ * @return array<mixed>|null Decoded JSON response, or null on failure.
+ */
 function danbooruGet(string $url): ?array
 {
     $separator = str_contains($url, '?') ? '&' : '?';
@@ -75,13 +78,18 @@ function danbooruGet(string $url): ?array
     $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
     curl_close($ch);
 
-    if ($httpCode === 200 && $response) {
+    if ($httpCode === 200 && is_string($response)) {
         return json_decode($response, true);
     }
 
     return null;
 }
 
+/**
+ * @param array<string, int> $categoryCache category_name => category_id
+ * @param array<string, int> $tagCache lowercase tag_name => tag_id
+ * @param array{found: int, tags_created: int, tags_applied: int} $tagStats
+ */
 function importTagsForMedia(int $mediaId, string $md5, PDO $db, array &$categoryCache, array &$tagCache, array &$tagStats): void
 {
     $url = DANBOORU_API_BASE . '/posts.json?tags=md5:' . urlencode($md5);
@@ -132,10 +140,8 @@ function importTagsForMedia(int $mediaId, string $md5, PDO $db, array &$category
     }
 
     foreach ($categorizedTags as $danbooruTag => $danbooruCategory) {
-        if (!isset(DANBOORU_CATEGORY_MAP[$danbooruCategory])) {
-            continue;
-        }
-
+        // $danbooruCategory is always one of the DANBOORU_CATEGORY_MAP keys
+        // (set from the hard-coded category blocks above), so no guard is needed.
         $ourCategoryName = DANBOORU_CATEGORY_MAP[$danbooruCategory];
         $ourCategoryId = $categoryCache[$ourCategoryName] ?? null;
         if ($ourCategoryId === null) {
@@ -300,6 +306,10 @@ try {
 
         // Compute MD5 hash to check for content duplicates
         $file_md5 = md5_file($file_path);
+        if ($file_md5 === false) {
+            $media_skipped++;
+            continue;
+        }
 
         if (isset($known_hashes[$file_md5])) {
             // Duplicate content — delete the new file
@@ -312,7 +322,7 @@ try {
         $media = new Media();
         $media->setMediaType($media_type)
             ->setFileName($file_name)
-            ->setFileTime(filemtime($file_path))
+            ->setFileTime((int) filemtime($file_path))
             ->setHash($file_md5);
 
         // Save (auto-creates thumbnail and fingerprint for images)

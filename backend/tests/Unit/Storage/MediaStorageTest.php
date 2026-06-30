@@ -34,7 +34,7 @@ final class MediaStorageTest extends DatabaseTestCase
         $storage = new MediaStorage(self::makeDb());
         $media = $this->insert($storage, 'a.jpg', 'h1');
 
-        $this->assertGreaterThan(0, $media->getMediaId());
+        $this->assertGreaterThan(0, $media->media_id);
     }
 
     public function testRetrieveByIdReturnsStoredMedia(): void
@@ -42,10 +42,10 @@ final class MediaStorageTest extends DatabaseTestCase
         $storage = new MediaStorage(self::makeDb());
         $media = $this->insert($storage, 'a.jpg', 'h1');
 
-        $fetched = $storage->retrieve($media->getMediaId());
+        $fetched = $storage->retrieve($media->media_id);
         $this->assertInstanceOf(Media::class, $fetched);
-        $this->assertSame('a.jpg', $fetched->getFileName());
-        $this->assertSame('h1', $fetched->getHash());
+        $this->assertSame('a.jpg', $fetched->file_name);
+        $this->assertSame('h1', $fetched->hash);
     }
 
     public function testRetrieveUnknownIdReturnsNull(): void
@@ -61,7 +61,7 @@ final class MediaStorageTest extends DatabaseTestCase
 
         $all = $storage->retrieve();
         $this->assertCount(2, $all);
-        $this->assertSame('new.jpg', $all[0]->getFileName());
+        $this->assertSame('new.jpg', $all[0]->file_name);
     }
 
     public function testRetrieveTotalCount(): void
@@ -83,11 +83,11 @@ final class MediaStorageTest extends DatabaseTestCase
 
         $page1 = $storage->retrieveForPage(1, 2);
         $this->assertCount(2, $page1);
-        $this->assertSame('c.jpg', $page1[0]->getFileName());
+        $this->assertSame('c.jpg', $page1[0]->file_name);
 
         $page2 = $storage->retrieveForPage(2, 2);
         $this->assertCount(1, $page2);
-        $this->assertSame('a.jpg', $page2[0]->getFileName());
+        $this->assertSame('a.jpg', $page2[0]->file_name);
     }
 
     public function testRetrieveByFilename(): void
@@ -95,7 +95,9 @@ final class MediaStorageTest extends DatabaseTestCase
         $storage = new MediaStorage(self::makeDb());
         $this->insert($storage, 'unique.png', 'h1');
 
-        $this->assertSame('h1', $storage->retrieveByFilename('unique.png')->getHash());
+        $byName = $storage->retrieveByFilename('unique.png');
+        $this->assertNotNull($byName);
+        $this->assertSame('h1', $byName->hash);
         $this->assertNull($storage->retrieveByFilename('missing.png'));
     }
 
@@ -114,7 +116,7 @@ final class MediaStorageTest extends DatabaseTestCase
         $storage = new MediaStorage(self::makeDb());
         $media = $this->insert($storage, 'a.jpg', 'hash-z');
 
-        $this->assertSame($media->getMediaId(), $storage->retrieveIdByHash('hash-z'));
+        $this->assertSame($media->media_id, $storage->retrieveIdByHash('hash-z'));
         $this->assertNull($storage->retrieveIdByHash('nope'));
     }
 
@@ -127,9 +129,9 @@ final class MediaStorageTest extends DatabaseTestCase
         $this->assertSame([], $storage->retrieveByIds([]));
         $this->assertSame([], $storage->retrieveByIds([0, -5]));
 
-        $result = $storage->retrieveByIds([$a->getMediaId(), $b->getMediaId(), 9999]);
+        $result = $storage->retrieveByIds([$a->media_id, $b->media_id, 9999]);
         $this->assertCount(2, $result);
-        $this->assertSame('b.jpg', $result[0]->getFileName());
+        $this->assertSame('b.jpg', $result[0]->file_name);
     }
 
     public function testRetrieveSummaryReturnsLightweightRows(): void
@@ -155,9 +157,10 @@ final class MediaStorageTest extends DatabaseTestCase
         $media->setWidth(1920)->setHeight(1080)->setDuration(0.0)->setFileSize(5000);
         $this->assertTrue($storage->updateMetadata($media));
 
-        $fetched = $storage->retrieve($media->getMediaId());
-        $this->assertSame(1920, $fetched->getWidth());
-        $this->assertSame(5000, $fetched->getFileSize());
+        $fetched = $storage->retrieve($media->media_id);
+        $this->assertNotNull($fetched);
+        $this->assertSame(1920, $fetched->width);
+        $this->assertSame(5000, $fetched->file_size);
     }
 
     public function testDeleteRemovesRow(): void
@@ -166,7 +169,7 @@ final class MediaStorageTest extends DatabaseTestCase
         $media = $this->insert($storage, 'a.jpg', 'h1');
 
         $this->assertTrue($storage->delete($media));
-        $this->assertNull($storage->retrieve($media->getMediaId()));
+        $this->assertNull($storage->retrieve($media->media_id));
         $this->assertSame(0, $storage->retrieveTotalCount());
     }
 
@@ -180,10 +183,10 @@ final class MediaStorageTest extends DatabaseTestCase
         $db->exec("INSERT INTO tag_categories (category_name, category_short) VALUES ('General', 'gen')");
         $db->exec("INSERT INTO tags (category_id, tag_name) VALUES (1, 'sky')");
         $db->prepare('INSERT INTO media_tags (media_id, tag_id) VALUES (:m, 1)')
-            ->execute([':m' => $tagged->getMediaId()]);
+            ->execute([':m' => $tagged->media_id]);
 
         $result = $storage->retrieveUntaggedForPage(1, 10);
         $this->assertCount(1, $result);
-        $this->assertSame('untagged.jpg', $result[0]->getFileName());
+        $this->assertSame('untagged.jpg', $result[0]->file_name);
     }
 }

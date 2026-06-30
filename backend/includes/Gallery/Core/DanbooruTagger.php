@@ -3,7 +3,7 @@
 namespace Gallery\Core;
 
 use PDO;
-use Gallery\Collection\DanbooruRulesCollection;
+use Gallery\Repository\DanbooruRulesRepository;
 
 /**
  * DanbooruTagger
@@ -24,8 +24,12 @@ class DanbooruTagger
     private const int IQDB_SCORE_THRESHOLD = 90;
 
     private PDO $db;
+    private DanbooruRulesRepository $rulesRepository;
     private string $login;
     private string $apiKey;
+
+    /** Whether the import maps and DB caches have been warmed (see ensureInitialized()). */
+    private bool $initialized = false;
 
     /** @var array<int, array{gallery_category_id: int, field: string}> danbooru_category_id => mapping */
     private array $categoryMap = [];
@@ -39,7 +43,7 @@ class DanbooruTagger
     /** @var array<string, int> lowercase tag_name => tag_id */
     private array $tagCache = [];
 
-    /** Optional callback for debug/diagnostic output: fn(string $message): void */
+    /** @var (callable(string): void)|null Optional callback for debug/diagnostic output. */
     private $debugCallback = null;
 
     /**
@@ -58,35 +62,39 @@ class DanbooruTagger
         }
     }
 
-    public function __construct(PDO $db, DanbooruRulesCollection $rulesCollection)
+    public function __construct(PDO $db, DanbooruRulesRepository $rulesRepository)
     {
         $this->db = $db;
+        $this->rulesRepository = $rulesRepository;
         $this->login = Configuration::getDanbooruLogin();
         $this->apiKey = Configuration::getDanbooruApiKey();
-
-        $this->categoryMap = $rulesCollection->getCategoryMapWithFields();
-        $this->tagNameMap = $rulesCollection->getTagMapArray();
-
-        $this->loadCaches();
     }
 
     /**
-     * Warm the category and tag caches from the database.
+     * Lazily load the import maps and warm the category/tag caches from the
+     * database. Construction stays cheap so this tagger can be injected
+     * directly into controllers without paying four DB queries (including a
+     * full scan of the tags table) on requests that never import tags.
+     * Called at the start of every public import method; runs at most once.
      */
-    private function loadCaches(): void
+    private function ensureInitialized(): void
     {
-        if (empty($this->categoryCache)) {
-            $stmt = $this->db->query('SELECT category_id, category_name FROM tag_categories');
-            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                $this->categoryCache[$row['category_name']] = (int)$row['category_id'];
-            }
+        if ($this->initialized) {
+            return;
+        }
+        $this->initialized = true;
+
+        $this->categoryMap = $this->rulesRepository->getCategoryMapWithFields();
+        $this->tagNameMap = $this->rulesRepository->getTagMapArray();
+
+        $stmt = $this->db->query('SELECT category_id, category_name FROM tag_categories');
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $this->categoryCache[$row['category_name']] = (int)$row['category_id'];
         }
 
-        if (empty($this->tagCache)) {
-            $stmt = $this->db->query('SELECT tag_id, tag_name FROM tags');
-            while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
-                $this->tagCache[strtolower($row['tag_name'])] = (int)$row['tag_id'];
-            }
+        $stmt = $this->db->query('SELECT tag_id, tag_name FROM tags');
+        while ($row = $stmt->fetch(PDO::FETCH_ASSOC)) {
+            $this->tagCache[strtolower($row['tag_name'])] = (int)$row['tag_id'];
         }
     }
 
@@ -104,6 +112,8 @@ class DanbooruTagger
      */
     public function importTagsForMedia(int $mediaId, string $md5, ?string $fileName = null): array
     {
+        $this->ensureInitialized();
+
         $stats = ['found' => false, 'tags_created' => 0, 'tags_applied' => 0, 'method' => 'none'];
 
         // 1. Try exact MD5 lookup
@@ -147,6 +157,8 @@ class DanbooruTagger
      */
     public function importTagsFromPost(int $mediaId, int $danbooruPostId): array
     {
+        $this->ensureInitialized();
+
         $stats = ['found' => false, 'tags_created' => 0, 'tags_applied' => 0, 'method' => 'none'];
 
         $post = $this->apiGet('/posts/' . $danbooruPostId . '.json');
@@ -168,9 +180,10 @@ class DanbooruTagger
     /**
      * Extract tags from a Danbooru post and apply them to the given media item.
      *
-     * @param int   $mediaId The gallery media_id.
-     * @param array $post    The decoded Danbooru post object.
-     * @param array &$stats  Stats array to update (tags_created, tags_applied).
+     * @param int $mediaId The gallery media_id.
+     * @param array<string, mixed> $post The decoded Danbooru post object.
+     * @param array{found: bool, tags_created: int, tags_applied: int, method: string} $stats Stats array to update.
+     * @throws \Throwable If applying the tag set fails; the transaction is rolled back first.
      */
     private function applyPostTags(int $mediaId, array $post, array &$stats): void
     {
@@ -263,7 +276,7 @@ class DanbooruTagger
      * constructed for Danbooru's IQDB service to fetch.
      *
      * @param string $fileName The media file name (e.g. "image.webp").
-     * @return array|null The full Danbooru post array, or null.
+     * @return array<string, mixed>|null The full Danbooru post array, or null.
      */
     private function iqdbLookup(string $fileName): ?array
     {
@@ -308,8 +321,8 @@ class DanbooruTagger
             return null;
         }
 
-        if ($httpCode !== 200 || !$response) {
-            $this->debug("  IQDB HTTP {$httpCode}" . ($response ? ": " . substr($response, 0, 200) : ''));
+        if ($httpCode !== 200 || !is_string($response)) {
+            $this->debug("  IQDB HTTP {$httpCode}" . (is_string($response) ? ": " . substr($response, 0, 200) : ''));
             return null;
         }
 
@@ -355,6 +368,8 @@ class DanbooruTagger
 
     /**
      * Make an authenticated GET request to the Danbooru API.
+     *
+     * @return array<mixed>|null The decoded JSON response (list or object), or null.
      */
     private function apiGet(string $path): ?array
     {
@@ -375,7 +390,7 @@ class DanbooruTagger
         $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
         unset($ch);
 
-        if ($httpCode === 200 && $response) {
+        if ($httpCode === 200 && is_string($response)) {
             return json_decode($response, true);
         }
 

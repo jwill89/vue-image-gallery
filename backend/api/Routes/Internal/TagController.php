@@ -2,13 +2,13 @@
 
 namespace Routes\Internal;
 
-use Psr\Container\ContainerInterface;
 use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
+use Gallery\Core\CacheGroup;
 use Gallery\Core\ResponseCache;
 use Gallery\Core\DanbooruTagger;
-use Gallery\Collection\TagCollection;
-use Gallery\Collection\TagCategoryCollection;
+use Gallery\Repository\TagRepository;
+use Gallery\Repository\TagCategoryRepository;
 use Gallery\Collection\MediaCollection;
 use Gallery\Structure\Tag;
 use Gallery\Structure\TagCategory;
@@ -29,22 +29,29 @@ class TagController extends AbstractController
         'teal', 'purple', 'pink', 'orange', 'cyan', 'lime', 'indigo', 'rose', 'amber', 'emerald',
     ];
 
-    private TagCollection $tag_collection;
-    private TagCategoryCollection $category_collection;
+    private TagRepository $tag_repository;
+    private TagCategoryRepository $category_repository;
     private MediaCollection $media_collection;
+    private DanbooruTagger $tagger;
 
     public function __construct(
-        ContainerInterface $container,
-        TagCollection $tag_collection,
-        TagCategoryCollection $category_collection,
-        MediaCollection $media_collection
+        TagRepository $tag_repository,
+        TagCategoryRepository $category_repository,
+        MediaCollection $media_collection,
+        DanbooruTagger $tagger
     ) {
-        parent::__construct($container);
-        $this->tag_collection = $tag_collection;
-        $this->category_collection = $category_collection;
+        parent::__construct();
+        $this->tag_repository = $tag_repository;
+        $this->category_repository = $category_repository;
         $this->media_collection = $media_collection;
+        // Lazy: warms its DB caches only on first import, so injecting it for
+        // every tag request (most of which never touch Danbooru) stays cheap.
+        $this->tagger = $tagger;
     }
 
+    /**
+     * GET /tags/tag/{tag_id} — A single tag by ID.
+     */
     public function getTag(Request $request, Response $response, array $args): Response
     {
         $tag_id = $this->parseParameters($args, 'tag_id', null);
@@ -57,29 +64,40 @@ class TagController extends AbstractController
             return $this->error($response, 'InvalidTagID', 400, 'The tag ID must be a positive number.');
         }
 
-        $data = $this->tag_collection->get((int)$tag_id);
+        $data = $this->tag_repository->get((int)$tag_id);
         return $this->success($response, $data);
     }
 
+    /**
+     * GET /tags/all — All tags (id, name, category). Cached.
+     */
     public function getAllTags(Request $request, Response $response, array $args): Response
     {
-        return $this->cachedSuccess($response, 'tags', 'all', ResponseCache::TTL_MEDIUM, function () {
-            return $this->tag_collection->getAll();
+        return $this->cachedSuccess($response, CacheGroup::Tags, 'all', ResponseCache::TTL_MEDIUM, function () {
+            return $this->tag_repository->getAll();
         });
     }
 
+    /**
+     * GET /tags/display — All tags with category and usage/implication counts,
+     * for the tags-management page. Cached.
+     */
     public function getTagListForDisplay(Request $request, Response $response, array $args): Response
     {
-        return $this->cachedSuccess($response, 'tags', 'display', ResponseCache::TTL_MEDIUM, function () {
-            return $this->tag_collection->getAllForPage();
+        return $this->cachedSuccess($response, CacheGroup::Tags, 'display', ResponseCache::TTL_MEDIUM, function () {
+            return $this->tag_repository->getAllForPage();
         });
     }
 
+    /**
+     * POST /tags/add — Create a tag.
+     * Body: { tag_name: string, category_id?: int (default 1) }
+     */
     public function addTag(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody();
-        $tag_name = $this->sanitizeTagName($this->parseParameters($params, 'tag_name', ''));
-        $tag_category = (int)$this->parseParameters($params, 'category_id', 1);
+        $params = $this->parsedBody($request);
+        $tag_name = $this->sanitizeTagName($this->stringParam($params, 'tag_name'));
+        $tag_category = $this->intParam($params, 'category_id', 1);
 
         if (empty($tag_name)) {
             return $this->error($response, 'InvalidTagName', 400, 'Tag name cannot be empty.');
@@ -87,33 +105,37 @@ class TagController extends AbstractController
         if (mb_strlen($tag_name) > self::MAX_TAG_NAME_LENGTH) {
             return $this->error($response, 'TagNameTooLong', 400, 'Tag name must be ' . self::MAX_TAG_NAME_LENGTH . ' characters or fewer.');
         }
-        if (!in_array($tag_category, $this->category_collection->getAllIds(), true)) {
+        if (!in_array($tag_category, $this->category_repository->getAllIds(), true)) {
             return $this->error($response, 'InvalidCategoryID', 400, 'The selected tag category is not valid.');
         }
-        if ($this->tag_collection->getByName($tag_name) instanceof Tag) {
+        if ($this->tag_repository->getByName($tag_name) instanceof Tag) {
             return $this->error($response, 'TagAlreadyExists', 400, "A tag named \"{$tag_name}\" already exists.");
         }
 
         $tag = new Tag();
         $tag->setTagName($tag_name)->setCategoryId($tag_category);
-        $tag_id = $this->tag_collection->save($tag);
+        $tag_id = $this->tag_repository->save($tag);
 
         if ($tag_id === 0) {
             $this->logger->error('Failed to create tag', ['tag_name' => $tag_name]);
             return $this->error($response, 'CouldNotCreateTag', 500, 'The tag could not be created. Please try again.');
         }
 
-        $this->invalidateCache('tags');
+        $this->invalidateCache(CacheGroup::Tags);
         $this->logger->info('Tag created', ['tag_id' => $tag_id, 'tag_name' => $tag_name, 'category_id' => $tag_category]);
         return $this->success($response, true);
     }
 
+    /**
+     * PUT /tags/edit/{tag_id} — Rename and/or recategorize a tag.
+     * Body: { tag_name: string, category_id?: int (default 1) }
+     */
     public function editTag(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody();
-        $tag_id = (int)$this->parseParameters($args, 'tag_id', 0);
-        $tag_name = $this->sanitizeTagName($this->parseParameters($params, 'tag_name', ''));
-        $tag_category = (int)$this->parseParameters($params, 'category_id', 1);
+        $params = $this->parsedBody($request);
+        $tag_id = $this->intParam($args, 'tag_id', 0);
+        $tag_name = $this->sanitizeTagName($this->stringParam($params, 'tag_name'));
+        $tag_category = $this->intParam($params, 'category_id', 1);
 
         if ($tag_id <= 0) {
             return $this->error($response, 'InvalidTagID', 400, 'The tag ID must be a positive number.');
@@ -124,30 +146,30 @@ class TagController extends AbstractController
         if (mb_strlen($tag_name) > self::MAX_TAG_NAME_LENGTH) {
             return $this->error($response, 'TagNameTooLong', 400, 'Tag name must be ' . self::MAX_TAG_NAME_LENGTH . ' characters or fewer.');
         }
-        if (!in_array($tag_category, $this->category_collection->getAllIds(), true)) {
+        if (!in_array($tag_category, $this->category_repository->getAllIds(), true)) {
             return $this->error($response, 'InvalidCategoryID', 400, 'The selected tag category is not valid.');
         }
 
-        $tag = $this->tag_collection->get($tag_id);
+        $tag = $this->tag_repository->get($tag_id);
         if (!($tag instanceof Tag)) {
             return $this->error($response, 'TagDoesNotExist', 404, 'The tag to edit could not be found.');
         }
 
         $tag->setTagName($tag_name)->setCategoryId($tag_category);
-        $saved_id = $this->tag_collection->save($tag);
+        $saved_id = $this->tag_repository->save($tag);
 
         if ($saved_id === 0) {
             $this->logger->error('Failed to save tag edit', ['tag_id' => $tag_id]);
             return $this->error($response, 'CouldNotSaveTag', 500, 'The tag changes could not be saved. Please try again.');
         }
 
-        $this->invalidateCache('tags');
+        $this->invalidateCache(CacheGroup::Tags);
         $this->logger->info('Tag edited', ['tag_id' => $tag_id, 'tag_name' => $tag_name, 'category_id' => $tag_category]);
         return $this->success($response, true);
     }
 
     /**
-     * Get tags for a media item by ID.
+     * GET /tags/for/media/{media_id} — Tags applied to a media item. Cached.
      */
     public function getTagsForMedia(Request $request, Response $response, array $args): Response
     {
@@ -163,18 +185,19 @@ class TagController extends AbstractController
             return $this->error($response, 'MediaDoesNotExist', 404, 'The media item could not be found.');
         }
 
-        return $this->cachedSuccess($response, 'tags', "for:media:{$media_id}", ResponseCache::TTL_SHORT, function () use ($media) {
-            return $this->tag_collection->getTagsForMedia($media);
+        return $this->cachedSuccess($response, CacheGroup::Tags, "for:media:{$media_id}", ResponseCache::TTL_SHORT, function () use ($media) {
+            return $this->tag_repository->getTagsForMedia($media);
         });
     }
 
     /**
-     * Add tags to a media item.
+     * PATCH /tags/media/add — Apply tags to a media item (implications resolved).
+     * Body: { item_id: int, tag_ids: int[] }. Returns the item's updated tag list.
      */
     public function addTagsToMedia(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody();
-        $media_id = (int)$this->parseParameters($params, 'item_id', 0);
+        $params = $this->parsedBody($request);
+        $media_id = $this->intParam($params, 'item_id', 0);
         $tag_ids_raw = $this->parseParameters($params, 'tag_ids', []);
 
         if ($media_id <= 0) {
@@ -194,34 +217,35 @@ class TagController extends AbstractController
         }
 
         // Validate that every supplied tag exists in a single query (no N+1).
-        $existing_ids = $this->tag_collection->getExistingIds($tag_ids);
+        $existing_ids = $this->tag_repository->getExistingIds($tag_ids);
         $missing = array_values(array_diff($tag_ids, $existing_ids));
         if (!empty($missing)) {
             return $this->error($response, 'TagDoesNotExist', 404, "Tag #{$missing[0]} does not exist.");
         }
 
-        $success = $this->tag_collection->addTagsToMedia($media, $tag_ids);
+        $success = $this->tag_repository->addTagsToMedia($media, $tag_ids);
 
         if (!$success) {
             $this->logger->error('Failed to add tags to media', ['media_id' => $media_id, 'tag_ids' => $tag_ids]);
             return $this->error($response, 'CouldNotAddTagsToMedia', 500, 'Failed to add tags to the media item. Please try again.');
         }
 
-        $this->invalidateCache('media', 'tags');
+        $this->invalidateCache(CacheGroup::Media, CacheGroup::Tags);
         $this->logger->info('Tags added to media', ['media_id' => $media_id, 'tag_ids' => $tag_ids]);
 
-        $data = $this->tag_collection->getTagsForMedia($media);
+        $data = $this->tag_repository->getTagsForMedia($media);
         return $this->success($response, $data);
     }
 
     /**
-     * Remove a tag from a media item.
+     * PATCH /tags/media/remove — Remove a tag from a media item.
+     * Body: { item_id: int, tag_id: int }. Returns the item's updated tag list.
      */
     public function removeTagFromMedia(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody();
-        $media_id = (int)$this->parseParameters($params, 'item_id', 0);
-        $tag_id = (int)$this->parseParameters($params, 'tag_id', 0);
+        $params = $this->parsedBody($request);
+        $media_id = $this->intParam($params, 'item_id', 0);
+        $tag_id = $this->intParam($params, 'tag_id', 0);
 
         if ($media_id <= 0) {
             return $this->error($response, 'InvalidMediaID', 400, 'The media ID must be a positive number.');
@@ -237,30 +261,34 @@ class TagController extends AbstractController
             return $this->error($response, 'InvalidTagID', 400, 'The tag ID must be a positive number.');
         }
 
-        $tag = $this->tag_collection->get($tag_id);
+        $tag = $this->tag_repository->get($tag_id);
         if (!($tag instanceof Tag)) {
             return $this->error($response, 'CouldNotFindTag', 404, 'The tag to remove could not be found.');
         }
 
-        $removed = $this->tag_collection->removeTagFromMedia($media, $tag);
+        $removed = $this->tag_repository->removeTagFromMedia($media, $tag);
 
         if (!$removed) {
             $this->logger->error('Failed to remove tag from media', ['media_id' => $media_id, 'tag_id' => $tag_id]);
             return $this->error($response, 'CouldNotRemoveTagFromMedia', 500, 'Failed to remove the tag. Please try again.');
         }
 
-        $this->invalidateCache('media', 'tags');
+        $this->invalidateCache(CacheGroup::Media, CacheGroup::Tags);
         $this->logger->info('Tag removed from media', ['media_id' => $media_id, 'tag_id' => $tag_id]);
 
-        $data = $this->tag_collection->getTagsForMedia($media);
+        $data = $this->tag_repository->getTagsForMedia($media);
         return $this->success($response, $data);
     }
 
+    /**
+     * POST /tags/migrate — Move all media from the source tag to the target,
+     * then delete the source. Body: { source_tag_id: int, target_tag_id: int }
+     */
     public function migrateTag(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody();
-        $source_id = (int)$this->parseParameters($params, 'source_tag_id', 0);
-        $target_id = (int)$this->parseParameters($params, 'target_tag_id', 0);
+        $params = $this->parsedBody($request);
+        $source_id = $this->intParam($params, 'source_tag_id', 0);
+        $target_id = $this->intParam($params, 'target_tag_id', 0);
 
         if ($source_id <= 0 || $target_id <= 0) {
             return $this->error($response, 'InvalidTagID', 400, 'Both source and target tag IDs must be positive numbers.');
@@ -270,36 +298,40 @@ class TagController extends AbstractController
             return $this->error($response, 'CannotMigrateToSelf', 400, 'A tag cannot be migrated to itself.');
         }
 
-        $sourceTag = $this->tag_collection->get($source_id);
-        $targetTag = $this->tag_collection->get($target_id);
+        $sourceTag = $this->tag_repository->get($source_id);
+        $targetTag = $this->tag_repository->get($target_id);
 
         if (!($sourceTag instanceof Tag) || !($targetTag instanceof Tag)) {
             return $this->error($response, 'TagDoesNotExist', 404, 'The source or target tag could not be found.');
         }
 
-        $success = $this->tag_collection->migrateTag($sourceTag, $targetTag);
+        $success = $this->tag_repository->migrateTag($sourceTag, $targetTag);
 
         if (!$success) {
             $this->logger->error('Failed to migrate tag', ['source' => $source_id, 'target' => $target_id]);
             return $this->error($response, 'CouldNotMigrateTag', 500, 'Tag migration failed. Please try again.');
         }
 
-        $this->invalidateCache('tags', 'media');
+        $this->invalidateCache(CacheGroup::Tags, CacheGroup::Media);
         $this->logger->info('Tag migrated', ['source' => $source_id, 'target' => $target_id]);
         return $this->success($response, true);
     }
 
+    /**
+     * DELETE /tags/delete — Delete a tag, optionally migrating its media to
+     * another tag first. Body: { tag_id: int, migrate_to_tag_id?: int }
+     */
     public function deleteTag(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody();
-        $tag_id = (int)$this->parseParameters($params, 'tag_id', 0);
-        $migrate_to_id = (int)$this->parseParameters($params, 'migrate_to_tag_id', 0);
+        $params = $this->parsedBody($request);
+        $tag_id = $this->intParam($params, 'tag_id', 0);
+        $migrate_to_id = $this->intParam($params, 'migrate_to_tag_id', 0);
 
         if ($tag_id <= 0) {
             return $this->error($response, 'InvalidTagID', 400, 'The tag ID must be a positive number.');
         }
 
-        $tag = $this->tag_collection->get($tag_id);
+        $tag = $this->tag_repository->get($tag_id);
         if (!($tag instanceof Tag)) {
             return $this->error($response, 'TagDoesNotExist', 404, 'The tag to delete could not be found.');
         }
@@ -309,25 +341,25 @@ class TagController extends AbstractController
                 return $this->error($response, 'CannotMigrateToSelf', 400, 'A tag cannot be migrated to itself.');
             }
 
-            $targetTag = $this->tag_collection->get($migrate_to_id);
+            $targetTag = $this->tag_repository->get($migrate_to_id);
             if (!($targetTag instanceof Tag)) {
                 return $this->error($response, 'MigrationTargetDoesNotExist', 404, 'The migration target tag could not be found.');
             }
 
-            $migrated = $this->tag_collection->migrateTag($tag, $targetTag);
+            $migrated = $this->tag_repository->migrateTag($tag, $targetTag);
             if (!$migrated) {
                 $this->logger->error('Failed to migrate before delete', ['tag_id' => $tag_id, 'target' => $migrate_to_id]);
                 return $this->error($response, 'CouldNotMigrateTag', 500, 'Tag migration failed before deletion. Nothing was deleted.');
             }
         }
 
-        $deleted = $this->tag_collection->delete($tag);
+        $deleted = $this->tag_repository->delete($tag);
         if (!$deleted) {
             $this->logger->error('Failed to delete tag', ['tag_id' => $tag_id]);
             return $this->error($response, 'CouldNotDeleteTag', 500, 'The tag could not be deleted. Please try again.');
         }
 
-        $this->invalidateCache('tags', 'media');
+        $this->invalidateCache(CacheGroup::Tags, CacheGroup::Media);
         $this->logger->info('Tag deleted', ['tag_id' => $tag_id, 'migrated_to' => $migrate_to_id]);
         return $this->success($response, true);
     }
@@ -336,165 +368,129 @@ class TagController extends AbstractController
     // Tag Category CRUD Endpoints
     // ========================================================================
 
+    /**
+     * GET /tags/categories — All tag categories.
+     */
     public function getCategories(Request $request, Response $response, array $args): Response
     {
-        return $this->success($response, $this->category_collection->getAll());
+        return $this->success($response, $this->category_repository->getAll());
     }
 
+    /**
+     * POST /tags/categories/add — Create a tag category.
+     * Body: { category_name: string, category_short: string, color?: string,
+     *         description?: string, sort_order?: int }
+     */
     public function addCategory(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody() ?? [];
-        $name = trim($params['category_name'] ?? '');
-        $short = trim(strtolower($params['category_short'] ?? ''));
-        $color = trim($params['color'] ?? 'white');
-        $description = trim($params['description'] ?? '');
-        $sortOrder = (int) ($params['sort_order'] ?? 0);
+        $result = $this->buildValidatedCategory($response, $this->parsedBody($request));
+        if ($result instanceof Response) {
+            return $result;
+        }
+        $category = $result;
 
-        if (empty($name)) {
-            return $this->error($response, 'InvalidInput', 400, 'Category name is required.');
-        }
-        if (mb_strlen($name) > self::MAX_CATEGORY_NAME_LENGTH) {
-            return $this->error($response, 'NameTooLong', 400, 'Category name must be ' . self::MAX_CATEGORY_NAME_LENGTH . ' characters or fewer.');
-        }
-        if (empty($short)) {
-            return $this->error($response, 'InvalidInput', 400, 'A shortcode is required.');
-        }
-        if (mb_strlen($short) > self::MAX_SHORTCODE_LENGTH) {
-            return $this->error($response, 'ShortcodeTooLong', 400, 'Shortcode must be ' . self::MAX_SHORTCODE_LENGTH . ' characters or fewer.');
-        }
-        if (!in_array($color, self::VALID_COLORS, true)) {
-            return $this->error($response, 'InvalidColor', 400, 'The selected color is not valid.');
-        }
-
-        $conflicts = $this->category_collection->checkConflicts($name, $short);
-        if (in_array('name', $conflicts, true)) {
-            return $this->error($response, 'NameTaken', 400, "A category named \"{$name}\" already exists.");
-        }
-        if (in_array('short', $conflicts, true)) {
-            return $this->error($response, 'ShortcodeTaken', 400, "The shortcode \"{$short}\" is already in use.");
-        }
-
-        $category = new TagCategory();
-        $category->setCategoryName($name)
-                 ->setCategoryShort($short)
-                 ->setColor($color)
-                 ->setDescription($description)
-                 ->setSortOrder($sortOrder);
-
-        $id = $this->category_collection->save($category);
+        $id = $this->category_repository->save($category);
         if ($id === 0) {
             return $this->error($response, 'SaveFailed', 500, 'Could not create the category.');
         }
 
-        $this->invalidateCache('tags');
-        $this->logger->info('Category created', ['category_id' => $id, 'name' => $name]);
-        return $this->success($response, $this->category_collection->getAll());
+        $this->invalidateCache(CacheGroup::Tags);
+        $this->logger->info('Category created', ['category_id' => $id, 'name' => $category->category_name]);
+        return $this->success($response, $this->category_repository->getAll());
     }
 
+    /**
+     * PUT /tags/categories/edit/{category_id} — Update a tag category.
+     * Body: same fields as addCategory.
+     */
     public function editCategory(Request $request, Response $response, array $args): Response
     {
         $categoryId = (int) ($args['category_id'] ?? 0);
-        $params = $request->getParsedBody() ?? [];
-        $name = trim($params['category_name'] ?? '');
-        $short = trim(strtolower($params['category_short'] ?? ''));
-        $color = trim($params['color'] ?? 'white');
-        $description = trim($params['description'] ?? '');
-        $sortOrder = (int) ($params['sort_order'] ?? 0);
-
         if ($categoryId <= 0) {
             return $this->error($response, 'InvalidInput', 400, 'A valid category ID is required.');
         }
 
-        $category = $this->category_collection->get($categoryId);
-        if ($category === null) {
+        $existing = $this->category_repository->get($categoryId);
+        if ($existing === null) {
             return $this->error($response, 'CategoryNotFound', 404, 'The category does not exist.');
         }
-        if (empty($name)) {
-            return $this->error($response, 'InvalidInput', 400, 'Category name is required.');
+
+        $result = $this->buildValidatedCategory($response, $this->parsedBody($request), $existing);
+        if ($result instanceof Response) {
+            return $result;
         }
-        if (mb_strlen($name) > self::MAX_CATEGORY_NAME_LENGTH) {
-            return $this->error($response, 'NameTooLong', 400, 'Category name must be ' . self::MAX_CATEGORY_NAME_LENGTH . ' characters or fewer.');
-        }
-        if (empty($short)) {
-            return $this->error($response, 'InvalidInput', 400, 'A shortcode is required.');
-        }
-        if (mb_strlen($short) > self::MAX_SHORTCODE_LENGTH) {
-            return $this->error($response, 'ShortcodeTooLong', 400, 'Shortcode must be ' . self::MAX_SHORTCODE_LENGTH . ' characters or fewer.');
-        }
-        if (!in_array($color, self::VALID_COLORS, true)) {
-            return $this->error($response, 'InvalidColor', 400, 'The selected color is not valid.');
+        $category = $result;
+
+        if ($this->category_repository->save($category) === 0) {
+            return $this->error($response, 'SaveFailed', 500, 'Could not save the category.');
         }
 
-        $conflicts = $this->category_collection->checkConflicts($name, $short, $categoryId);
-        if (in_array('name', $conflicts, true)) {
-            return $this->error($response, 'NameTaken', 400, "A category named \"{$name}\" already exists.");
-        }
-        if (in_array('short', $conflicts, true)) {
-            return $this->error($response, 'ShortcodeTaken', 400, "The shortcode \"{$short}\" is already in use.");
-        }
-
-        $category->setCategoryName($name)
-                 ->setCategoryShort($short)
-                 ->setColor($color)
-                 ->setDescription($description)
-                 ->setSortOrder($sortOrder);
-
-        $this->category_collection->save($category);
-        $this->invalidateCache('tags');
-        $this->logger->info('Category edited', ['category_id' => $categoryId, 'name' => $name]);
-        return $this->success($response, $this->category_collection->getAll());
+        $this->invalidateCache(CacheGroup::Tags);
+        $this->logger->info('Category edited', ['category_id' => $categoryId, 'name' => $category->category_name]);
+        return $this->success($response, $this->category_repository->getAll());
     }
 
+    /**
+     * DELETE /tags/categories/delete — Delete a category that has no tags.
+     * Body: { category_id: int }
+     */
     public function deleteCategory(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody() ?? [];
+        $params = $this->parsedBody($request);
         $categoryId = (int) ($params['category_id'] ?? 0);
 
         if ($categoryId <= 0) {
             return $this->error($response, 'InvalidInput', 400, 'A valid category ID is required.');
         }
 
-        $category = $this->category_collection->get($categoryId);
+        $category = $this->category_repository->get($categoryId);
         if ($category === null) {
             return $this->error($response, 'CategoryNotFound', 404, 'The category does not exist.');
         }
 
-        $tagCount = $this->category_collection->countTags($categoryId);
+        $tagCount = $this->category_repository->countTags($categoryId);
         if ($tagCount > 0) {
             return $this->error(
                 $response,
                 'CategoryInUse',
                 400,
-                "Cannot delete \"{$category->getCategoryName()}\" because {$tagCount} tag(s) belong to it. Reassign them first."
+                "Cannot delete \"{$category->category_name}\" because {$tagCount} tag(s) belong to it. Reassign them first."
             );
         }
 
-        $deleted = $this->category_collection->delete($category);
+        $deleted = $this->category_repository->delete($category);
         if (!$deleted) {
             return $this->error($response, 'DeleteFailed', 500, 'Could not delete the category.');
         }
 
-        $this->invalidateCache('tags');
+        $this->invalidateCache(CacheGroup::Tags);
         $this->logger->info('Category deleted', ['category_id' => $categoryId]);
-        return $this->success($response, $this->category_collection->getAll());
+        return $this->success($response, $this->category_repository->getAll());
     }
 
     // ========================================================================
     // Tag Implication Endpoints
     // ========================================================================
 
+    /**
+     * GET /tags/implications — All tag implications. Cached.
+     */
     public function getImplications(Request $request, Response $response, array $args): Response
     {
-        return $this->cachedSuccess($response, 'tags', 'implications', ResponseCache::TTL_MEDIUM, function () {
-            return $this->tag_collection->getAllImplications();
+        return $this->cachedSuccess($response, CacheGroup::Tags, 'implications', ResponseCache::TTL_MEDIUM, function () {
+            return $this->tag_repository->getAllImplications();
         });
     }
 
+    /**
+     * POST /tags/implications/add — Add "tag_id implies implied_tag_id".
+     * Body: { tag_id: int, implied_tag_id: int }. Rejects cycles and self-implication.
+     */
     public function addImplication(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody();
-        $tag_id = (int)$this->parseParameters($params, 'tag_id', 0);
-        $implied_tag_id = (int)$this->parseParameters($params, 'implied_tag_id', 0);
+        $params = $this->parsedBody($request);
+        $tag_id = $this->intParam($params, 'tag_id', 0);
+        $implied_tag_id = $this->intParam($params, 'implied_tag_id', 0);
 
         if ($tag_id <= 0 || $implied_tag_id <= 0) {
             return $this->error($response, 'InvalidTagID', 400, 'Both tag IDs must be positive numbers.');
@@ -504,44 +500,48 @@ class TagController extends AbstractController
             return $this->error($response, 'CannotImplySelf', 400, 'A tag cannot imply itself.');
         }
 
-        $tag = $this->tag_collection->get($tag_id);
-        $impliedTag = $this->tag_collection->get($implied_tag_id);
+        $tag = $this->tag_repository->get($tag_id);
+        $impliedTag = $this->tag_repository->get($implied_tag_id);
 
         if (!($tag instanceof Tag) || !($impliedTag instanceof Tag)) {
             return $this->error($response, 'TagDoesNotExist', 404, 'One or both of the specified tags could not be found.');
         }
 
-        $success = $this->tag_collection->addImplication($tag_id, $implied_tag_id);
+        $success = $this->tag_repository->addImplication($tag_id, $implied_tag_id);
 
         if (!$success) {
             return $this->error($response, 'CycleDetected', 400, 'This implication would create a circular dependency.');
         }
 
-        $this->invalidateCache('tags');
+        $this->invalidateCache(CacheGroup::Tags);
         $this->logger->info('Tag implication added', ['tag_id' => $tag_id, 'implied_tag_id' => $implied_tag_id]);
-        return $this->success($response, $this->tag_collection->getAllImplications());
+        return $this->success($response, $this->tag_repository->getAllImplications());
     }
 
+    /**
+     * DELETE /tags/implications/remove — Remove an implication.
+     * Body: { tag_id: int, implied_tag_id: int }
+     */
     public function removeImplication(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody();
-        $tag_id = (int)$this->parseParameters($params, 'tag_id', 0);
-        $implied_tag_id = (int)$this->parseParameters($params, 'implied_tag_id', 0);
+        $params = $this->parsedBody($request);
+        $tag_id = $this->intParam($params, 'tag_id', 0);
+        $implied_tag_id = $this->intParam($params, 'implied_tag_id', 0);
 
         if ($tag_id <= 0 || $implied_tag_id <= 0) {
             return $this->error($response, 'InvalidTagID', 400, 'Both tag IDs must be positive numbers.');
         }
 
-        $success = $this->tag_collection->removeImplication($tag_id, $implied_tag_id);
+        $success = $this->tag_repository->removeImplication($tag_id, $implied_tag_id);
 
         if (!$success) {
             $this->logger->error('Failed to remove tag implication', ['tag_id' => $tag_id, 'implied_tag_id' => $implied_tag_id]);
             return $this->error($response, 'CouldNotRemoveImplication', 500, 'The implication could not be removed. Please try again.');
         }
 
-        $this->invalidateCache('tags');
+        $this->invalidateCache(CacheGroup::Tags);
         $this->logger->info('Tag implication removed', ['tag_id' => $tag_id, 'implied_tag_id' => $implied_tag_id]);
-        return $this->success($response, $this->tag_collection->getAllImplications());
+        return $this->success($response, $this->tag_repository->getAllImplications());
     }
 
     // ========================================================================
@@ -549,7 +549,7 @@ class TagController extends AbstractController
     // ========================================================================
 
     /**
-     * Fetch tags from Danbooru for a media item.
+     * POST /tags/danbooru-fetch — Fetch tags from Danbooru for a media item.
      *
      * Accepts either:
      *   - media_id only: auto-lookup by MD5 hash, then IQDB visual similarity
@@ -559,7 +559,7 @@ class TagController extends AbstractController
      */
     public function fetchDanbooruTags(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody() ?? [];
+        $params = $this->parsedBody($request);
         $mediaId = (int) ($params['media_id'] ?? 0);
         $danbooruPostId = (int) ($params['danbooru_post_id'] ?? 0);
 
@@ -581,14 +581,12 @@ class TagController extends AbstractController
             return $this->error($response, 'MediaDoesNotExist', 404, 'The media item could not be found.');
         }
 
-        $tagger = $this->container->get(DanbooruTagger::class);
-
         if ($danbooruPostId > 0) {
             // Direct post ID import
-            $result = $tagger->importTagsFromPost($mediaId, $danbooruPostId);
+            $result = $this->tagger->importTagsFromPost($mediaId, $danbooruPostId);
         } else {
             // Auto-lookup: MD5 first, then IQDB fallback
-            $result = $tagger->importTagsForMedia($mediaId, $media->getHash(), $media->getFileName());
+            $result = $this->tagger->importTagsForMedia($mediaId, $media->hash, $media->file_name);
         }
 
         if (!$result['found']) {
@@ -602,7 +600,7 @@ class TagController extends AbstractController
             );
         }
 
-        $this->invalidateCache('media', 'tags');
+        $this->invalidateCache(CacheGroup::Media, CacheGroup::Tags);
         $this->logger->info('Danbooru tags imported', [
             'media_id' => $mediaId,
             'method' => $result['method'],
@@ -611,10 +609,10 @@ class TagController extends AbstractController
         ]);
 
         // Refresh the global tag list (new tags may have been created)
-        $store_tags = $this->tag_collection->getAll();
+        $store_tags = $this->tag_repository->getAll();
 
         $data = [
-            'tags' => $this->tag_collection->getTagsForMedia($media),
+            'tags' => $this->tag_repository->getTagsForMedia($media),
             'all_tags' => $store_tags,
             'method' => $result['method'],
             'tags_applied' => $result['tags_applied'],
@@ -628,14 +626,68 @@ class TagController extends AbstractController
     // Private helpers
     // ========================================================================
 
+    /**
+     * Validates category input from the request and applies it to a TagCategory.
+     *
+     * Shared by addCategory()/editCategory(). On success it returns the populated
+     * category — a fresh one, or $existing mutated in place. On any validation
+     * failure it returns the error Response to send back. When $existing is given
+     * its ID is excluded from the name/shortcode conflict check.
+     *
+     * @param array<string, mixed> $params
+     * @return TagCategory|Response
+     */
+    private function buildValidatedCategory(Response $response, array $params, ?TagCategory $existing = null): TagCategory|Response
+    {
+        $name = trim($params['category_name'] ?? '');
+        $short = trim(strtolower($params['category_short'] ?? ''));
+        $color = trim($params['color'] ?? 'white');
+        $description = trim($params['description'] ?? '');
+        $sortOrder = (int) ($params['sort_order'] ?? 0);
+
+        if (empty($name)) {
+            return $this->error($response, 'InvalidInput', 400, 'Category name is required.');
+        }
+        if (mb_strlen($name) > self::MAX_CATEGORY_NAME_LENGTH) {
+            return $this->error($response, 'NameTooLong', 400, 'Category name must be ' . self::MAX_CATEGORY_NAME_LENGTH . ' characters or fewer.');
+        }
+        if (empty($short)) {
+            return $this->error($response, 'InvalidInput', 400, 'A shortcode is required.');
+        }
+        if (mb_strlen($short) > self::MAX_SHORTCODE_LENGTH) {
+            return $this->error($response, 'ShortcodeTooLong', 400, 'Shortcode must be ' . self::MAX_SHORTCODE_LENGTH . ' characters or fewer.');
+        }
+        if (!in_array($color, self::VALID_COLORS, true)) {
+            return $this->error($response, 'InvalidColor', 400, 'The selected color is not valid.');
+        }
+
+        $excludeId = $existing instanceof TagCategory ? $existing->category_id : 0;
+        $conflicts = $this->category_repository->checkConflicts($name, $short, $excludeId);
+        if (in_array('name', $conflicts, true)) {
+            return $this->error($response, 'NameTaken', 400, "A category named \"{$name}\" already exists.");
+        }
+        if (in_array('short', $conflicts, true)) {
+            return $this->error($response, 'ShortcodeTaken', 400, "The shortcode \"{$short}\" is already in use.");
+        }
+
+        $category = $existing ?? new TagCategory();
+        return $category->setCategoryName($name)
+                 ->setCategoryShort($short)
+                 ->setColor($color)
+                 ->setDescription($description)
+                 ->setSortOrder($sortOrder);
+    }
+
     private function sanitizeTagName(string $tag_name): string
     {
-        $tag_name = trim($tag_name);
-        $tag_name = mb_strtolower($tag_name, 'UTF-8');
-        $tag_name = strip_tags($tag_name);
-        $tag_name = preg_replace('/[\x00-\x1F\x7F]/u', '', $tag_name);
-        $tag_name = ltrim($tag_name, '-');
-
-        return $tag_name;
+        // Apply the cleanup steps left-to-right via the pipe operator (PHP 8.5).
+        // Single-argument transforms use first-class callable syntax; the two
+        // that need a second argument are wrapped in a closure.
+        return $tag_name
+            |> trim(...)
+            |> (fn(string $s): string => mb_strtolower($s, 'UTF-8'))
+            |> strip_tags(...)
+            |> (fn(string $s): string => (string) preg_replace('/[\x00-\x1F\x7F]/u', '', $s))
+            |> (fn(string $s): string => ltrim($s, '-'));
     }
 }

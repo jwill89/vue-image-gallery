@@ -1,0 +1,29 @@
+includes:
+    - vendor/phpstan/phpstan-phpunit/extension.neon
+    - vendor/phpstan/phpstan-phpunit/rules.neon
+
+parameters:
+    level: 8
+    paths:
+        - includes/Gallery
+        - api
+        - scripts
+        - tests
+    # PHPStan never executes code, so the legacy db/gallery.db is never touched.
+    treatPhpDocTypesAsCertain: false
+    ignoreErrors:
+        # Slim's action signature is fixed: (Request, Response, array $args).
+        # Route placeholders are always array<string, string>, so typing this
+        # framework-imposed parameter on every action catches no bugs — it is
+        # noise, not signal. Domain arrays are all annotated normally.
+        -
+            identifier: missingType.iterableValue
+            message: '#parameter \$args with no value type specified#'
+            path: api/Routes/Internal/*.php
+        # The PDO connection runs with ERRMODE_EXCEPTION (see DatabaseConnection),
+        # so query()/prepare() throw on failure and never actually return false.
+        # PHPStan can't see that, so it flags fetch()/fetchAll()/fetchColumn() on
+        # the PDOStatement|false union. The false branch is unreachable.
+        -
+            identifier: method.nonObject
+            message: '#Cannot call method \w+\(\) on PDOStatement\|false#'

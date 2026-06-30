@@ -2,13 +2,13 @@
 
 namespace Routes\Internal;
 
-use Psr\Container\ContainerInterface;
 use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
+use Gallery\Core\CacheGroup;
 use Gallery\Core\Configuration;
 use Gallery\Core\ResponseCache;
 use Gallery\Collection\MediaCollection;
-use Gallery\Collection\TagCollection;
+use Gallery\Repository\TagRepository;
 
 /**
  * MediaController class
@@ -17,17 +17,18 @@ use Gallery\Collection\TagCollection;
 class MediaController extends AbstractController
 {
     private MediaCollection $media_collection;
-    private TagCollection $tag_collection;
+    private TagRepository $tag_repository;
 
-    public function __construct(ContainerInterface $container, MediaCollection $media_collection, TagCollection $tag_collection)
+    public function __construct(MediaCollection $media_collection, TagRepository $tag_repository)
     {
-        parent::__construct($container);
+        parent::__construct();
         $this->media_collection = $media_collection;
-        $this->tag_collection = $tag_collection;
+        $this->tag_repository = $tag_repository;
     }
 
     /**
-     * Get a single media item by ID, or all items if no ID given.
+     * GET /media/{media_id} — A single media item by ID.
+     * The ID is required; there is no "list all" form (use the paginated routes).
      */
     public function getItem(Request $request, Response $response, array $args): Response
     {
@@ -58,7 +59,7 @@ class MediaController extends AbstractController
      */
     public function getItemsByIds(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody() ?? [];
+        $params = $this->parsedBody($request);
         $rawIds = $params['ids'] ?? [];
 
         if (!is_array($rawIds) || empty($rawIds)) {
@@ -77,7 +78,7 @@ class MediaController extends AbstractController
     }
 
     /**
-     * Get a single random media item.
+     * GET /media/random — A single random media item.
      */
     public function getRandomItem(Request $request, Response $response, array $args): Response
     {
@@ -89,18 +90,19 @@ class MediaController extends AbstractController
     }
 
     /**
-     * Get paginated media items.
+     * GET /media/page/{page}[/{items_per_page}] — A page of media items.
+     * Returns { items, total_pages, current_page }. items_per_page is clamped to 1..200.
      */
     public function getItemsForPage(Request $request, Response $response, array $args): Response
     {
-        $page = (int)$this->parseParameters($args, 'page', 0);
-        $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
+        $page = $this->intParam($args, 'page', 0);
+        $items_per_page = min(max($this->intParam($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
 
         if ($page <= 0) {
             return $this->error($response, 'InvalidPageNumber', 400, 'Page number must be 1 or greater.');
         }
 
-        return $this->cachedSuccess($response, 'media', "page:{$page}:{$items_per_page}", ResponseCache::TTL_SHORT, function () use ($page, $items_per_page) {
+        return $this->cachedSuccess($response, CacheGroup::Media, "page:{$page}:{$items_per_page}", ResponseCache::TTL_SHORT, function () use ($page, $items_per_page) {
             $items = $this->media_collection->getForPage($page, $items_per_page);
             $total = $this->media_collection->totalMedia();
             $total_pages = (int)ceil($total / $items_per_page);
@@ -114,14 +116,16 @@ class MediaController extends AbstractController
     }
 
     /**
-     * Get paginated media filtered by tags with support for negative tags.
+     * GET /media/with-tags/{tag_list}/{page}[/{items_per_page}] — A page of media
+     * filtered by a comma-separated tag list. A leading '-' excludes a tag
+     * (e.g. "cat,-dog"). Returns { items, total_pages, current_page }.
      */
     public function getItemsWithTags(Request $request, Response $response, array $args): Response
     {
-        $tag_list_raw = $this->parseParameters($args, 'tag_list', '');
+        $tag_list_raw = $this->stringParam($args, 'tag_list');
         $tag_list = array_map('trim', explode(',', $tag_list_raw));
-        $page = (int)$this->parseParameters($args, 'page', 1);
-        $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
+        $page = $this->intParam($args, 'page', 1);
+        $items_per_page = min(max($this->intParam($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
 
         $include_names = [];
         $exclude_names = [];
@@ -139,14 +143,14 @@ class MediaController extends AbstractController
             }
         }
 
-        $include_ids = $this->resolveTagIds($include_names, $this->tag_collection);
-        $exclude_ids = $this->resolveTagIds($exclude_names, $this->tag_collection);
+        $include_ids = $this->resolveTagIds($include_names, $this->tag_repository);
+        $exclude_ids = $this->resolveTagIds($exclude_names, $this->tag_repository);
 
         if (empty($include_ids) && empty($exclude_ids)) {
             return $this->error($response, 'NoValidTagsSupplied', 404, 'None of the specified tag names matched existing tags.');
         }
 
-        return $this->cachedSuccess($response, 'media', "tags:{$tag_list_raw}:{$page}:{$items_per_page}", ResponseCache::TTL_SHORT, function () use ($include_ids, $exclude_ids, $page, $items_per_page) {
+        return $this->cachedSuccess($response, CacheGroup::Media, "tags:{$tag_list_raw}:{$page}:{$items_per_page}", ResponseCache::TTL_SHORT, function () use ($include_ids, $exclude_ids, $page, $items_per_page) {
             if (!empty($exclude_ids)) {
                 $items = $this->media_collection->getWithTagFilter($include_ids, $exclude_ids, $page, $items_per_page);
                 $total = $this->media_collection->totalWithTagFilter($include_ids, $exclude_ids);
@@ -166,18 +170,19 @@ class MediaController extends AbstractController
     }
 
     /**
-     * Get paginated untagged media.
+     * GET /media/untagged/{page}[/{items_per_page}] — A page of media that have
+     * no tags applied. Returns { items, total_pages, current_page }.
      */
     public function getUntaggedItems(Request $request, Response $response, array $args): Response
     {
-        $page = (int)$this->parseParameters($args, 'page', 0);
-        $items_per_page = min(max((int)$this->parseParameters($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
+        $page = $this->intParam($args, 'page', 0);
+        $items_per_page = min(max($this->intParam($args, 'items_per_page', Configuration::DEFAULT_PER_PAGE), 1), 200);
 
         if ($page <= 0) {
             return $this->error($response, 'InvalidPageNumber', 400, 'Page number must be 1 or greater.');
         }
 
-        return $this->cachedSuccess($response, 'media', "untagged:{$page}:{$items_per_page}", ResponseCache::TTL_SHORT, function () use ($page, $items_per_page) {
+        return $this->cachedSuccess($response, CacheGroup::Media, "untagged:{$page}:{$items_per_page}", ResponseCache::TTL_SHORT, function () use ($page, $items_per_page) {
             $items = $this->media_collection->getUntagged($page, $items_per_page);
             $total = $this->media_collection->totalUntagged();
             $total_pages = max(1, (int)ceil($total / $items_per_page));
@@ -191,7 +196,7 @@ class MediaController extends AbstractController
     }
 
     /**
-     * Delete a media item by ID.
+     * DELETE /media/{media_id} — Delete a media item (DB row, file, thumbnails).
      */
     public function deleteItem(Request $request, Response $response, array $args): Response
     {
@@ -209,7 +214,7 @@ class MediaController extends AbstractController
 
         try {
             $this->media_collection->delete($item);
-            $this->invalidateCache('media', 'tags');
+            $this->invalidateCache(CacheGroup::Media, CacheGroup::Tags);
             $this->logger->info('Media deleted', ['media_id' => (int)$id]);
             return $this->success($response, ['deleted' => (int)$id]);
         } catch (\Throwable $e) {
@@ -219,11 +224,11 @@ class MediaController extends AbstractController
     }
 
     /**
-     * Get the total media count.
+     * GET /media/total — The total media count.
      */
     public function getTotal(Request $request, Response $response, array $args): Response
     {
-        return $this->cachedSuccess($response, 'media', 'total', ResponseCache::TTL_MEDIUM, function () {
+        return $this->cachedSuccess($response, CacheGroup::Media, 'total', ResponseCache::TTL_MEDIUM, function () {
             return $this->media_collection->totalMedia();
         });
     }

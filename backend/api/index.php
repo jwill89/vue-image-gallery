@@ -73,7 +73,7 @@ function verifyAuthToken(string $authHeader): bool
 function unauthorizedResponse(): ResponseInterface
 {
     $response = new \Slim\Psr7\Response();
-    $response->getBody()->write(json_encode([
+    $response->getBody()->write((string) json_encode([
         'error' => 'Unauthorized',
         'message' => 'Authentication is required. Please log in and try again.',
     ]));
@@ -126,7 +126,7 @@ $app->add(function (ServerRequestInterface $request, RequestHandlerInterface $ha
     if (!$result['allowed']) {
         Logger::getInstance()->warning('Rate limit exceeded', ['ip' => $ip, 'retry_after' => $result['retry_after']]);
         $response = new \Slim\Psr7\Response();
-        $response->getBody()->write(json_encode([
+        $response->getBody()->write((string) json_encode([
             'error' => 'RateLimitExceeded',
             'message' => 'Too many requests. Please wait a moment and try again.',
             'retry_after' => $result['retry_after'],
@@ -172,7 +172,7 @@ $app->add(function (ServerRequestInterface $request, RequestHandlerInterface $ha
         if ($rejected) {
             Logger::getInstance()->warning('CSRF rejected', ['origin' => $origin, 'referer' => $referer]);
             $response = new \Slim\Psr7\Response();
-            $response->getBody()->write(json_encode([
+            $response->getBody()->write((string) json_encode([
                 'error' => 'ForbiddenOrigin',
                 'message' => 'The request origin is not allowed.',
             ], JSON_THROW_ON_ERROR));
@@ -269,7 +269,7 @@ $app->post('/auth/login[/]', function (ServerRequestInterface $request, Response
     $loginCheck = $loginLimiter->check('login:' . $ip);
     if (!$loginCheck['allowed']) {
         Logger::getInstance()->warning('Login rate limit exceeded', ['ip' => $ip]);
-        $response->getBody()->write(json_encode([
+        $response->getBody()->write((string) json_encode([
             'error' => 'TooManyAttempts',
             'message' => 'Too many login attempts. Please wait a few minutes and try again.',
             'retry_after' => $loginCheck['retry_after'],
@@ -284,7 +284,7 @@ $app->post('/auth/login[/]', function (ServerRequestInterface $request, Response
     // 'changeme' development default can never grant access in production.
     if (!Configuration::isAdminConfigured()) {
         Logger::getInstance()->error('Login attempted but GALLERY_ADMIN_PASSWORD is not configured', ['ip' => $ip]);
-        $response->getBody()->write(json_encode([
+        $response->getBody()->write((string) json_encode([
             'error' => 'AdminNotConfigured',
             'message' => 'Admin access is not configured on the server.',
         ]));
@@ -304,12 +304,12 @@ $app->post('/auth/login[/]', function (ServerRequestInterface $request, Response
         $stmt->execute([':token' => $token, ':time' => time()]);
 
         Logger::getInstance()->info('Admin login successful', ['ip' => $ip]);
-        $response->getBody()->write(json_encode(['token' => $token]));
+        $response->getBody()->write((string) json_encode(['token' => $token]));
         return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
     }
 
     Logger::getInstance()->warning('Admin login failed', ['ip' => $ip]);
-    $response->getBody()->write(json_encode([
+    $response->getBody()->write((string) json_encode([
         'error' => 'InvalidPassword',
         'message' => 'The password is incorrect.',
     ]));

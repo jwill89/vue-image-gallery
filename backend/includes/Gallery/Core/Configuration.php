@@ -194,6 +194,8 @@ class Configuration
      * Get allowed CORS origins.
      * The env var should be a comma-separated list of origins.
      * Falls back to default localhost origins if not set.
+     *
+     * @return list<string>
      */
     public static function getAllowedOrigins(): array
     {

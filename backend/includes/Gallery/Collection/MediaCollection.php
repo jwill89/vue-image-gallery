@@ -23,11 +23,12 @@ class MediaCollection
     public const string MEDIA_DIRECTORY_FULL = 'media/full/';
     public const string MEDIA_DIRECTORY_THUMBNAILS = 'media/thumbs/';
 
-    /** Extensions classified as images (static GIFs included here for extension validation). */
+    /**
+     * Extensions classified as images (static GIFs included here for extension
+     * validation). detectMediaType() treats everything else as video, so there
+     * is no separate video-extension list to maintain here.
+     */
     private const array IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'avif'];
-
-    /** Extensions classified as videos. */
-    private const array VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'm4v'];
 
     private MediaStorage $storage;
 
@@ -46,6 +47,8 @@ class MediaCollection
 
     /**
      * Gets all media items.
+     *
+     * @return Media[]
      */
     public function getAll(): array
     {
@@ -54,6 +57,8 @@ class MediaCollection
 
     /**
      * Gets a lightweight summary of all media (or filtered by type).
+     *
+     * @return list<array<string, mixed>>
      */
     public function getAllSummary(?string $media_type = null): array
     {
@@ -70,6 +75,8 @@ class MediaCollection
 
     /**
      * Gets paginated media items.
+     *
+     * @return Media[]
      */
     public function getForPage(int $page_number, ?int $items_per_page = null): array
     {
@@ -79,6 +86,9 @@ class MediaCollection
 
     /**
      * Gets paginated media filtered by tags.
+     *
+     * @param int[] $tag_ids
+     * @return Media[]
      */
     public function getWithTags(array $tag_ids, int $page_number, ?int $items_per_page = null): array
     {
@@ -88,6 +98,10 @@ class MediaCollection
 
     /**
      * Gets media matching included/excluded tags.
+     *
+     * @param int[] $include_tag_ids
+     * @param int[] $exclude_tag_ids
+     * @return Media[]
      */
     public function getWithTagFilter(array $include_tag_ids, array $exclude_tag_ids, int $page_number, ?int $items_per_page = null): array
     {
@@ -97,6 +111,9 @@ class MediaCollection
 
     /**
      * Gets total count of media matching included/excluded tags.
+     *
+     * @param int[] $include_tag_ids
+     * @param int[] $exclude_tag_ids
      */
     public function totalWithTagFilter(array $include_tag_ids, array $exclude_tag_ids): int
     {
@@ -113,6 +130,8 @@ class MediaCollection
 
     /**
      * Gets untagged media for a page.
+     *
+     * @return Media[]
      */
     public function getUntagged(int $page_number, ?int $items_per_page = null): array
     {
@@ -130,6 +149,8 @@ class MediaCollection
 
     /**
      * Gets total media with specific tags.
+     *
+     * @param int[] $tag_ids
      */
     public function totalMediaWithTags(array $tag_ids): int
     {
@@ -178,14 +199,14 @@ class MediaCollection
     public function createThumbnail(Media $media, ?string $source_dir = null): void
     {
         $source_dir = $source_dir ?? self::MEDIA_DIRECTORY;
-        $source_path = $source_dir . $media->getFileName();
-        $base_name = pathinfo($media->getFileName(), PATHINFO_FILENAME);
+        $source_path = $source_dir . $media->file_name;
+        $base_name = pathinfo($media->file_name, PATHINFO_FILENAME);
         $thumb_dir = self::MEDIA_DIRECTORY_THUMBNAILS;
 
         if ($media->isImage()) {
             MediaThumbnail::createFromImage($source_path, $thumb_dir, $base_name);
         } else {
-            $ext = strtolower(pathinfo($media->getFileName(), PATHINFO_EXTENSION));
+            $ext = strtolower(pathinfo($media->file_name, PATHINFO_EXTENSION));
             if ($ext === 'gif') {
                 // GIFs: extract first frame as image thumbnail
                 MediaThumbnail::createFromImage($source_path, $thumb_dir, $base_name);
@@ -207,7 +228,7 @@ class MediaCollection
 
         $source_dir = $source_dir ?? self::MEDIA_DIRECTORY;
         $hasher = new ImageHash(new PerceptualHash());
-        $hash = $hasher->hash($source_dir . $media->getFileName());
+        $hash = $hasher->hash($source_dir . $media->file_name);
         $bits = $hash->toBits();
         $media->setBitsFingerprint($bits);
 
@@ -274,12 +295,12 @@ class MediaCollection
         $source_dir = $source_dir ?? self::MEDIA_DIRECTORY;
 
         // Generate fingerprint for images if not already set
-        if ($media->isImage() && empty($media->getBitsFingerprint())) {
+        if ($media->isImage() && empty($media->bits_fingerprint)) {
             $this->createFingerprint($media, $source_dir);
         }
 
         // Extract basic metadata (dimensions, duration, file size) from the source file
-        $meta = MediaMetadata::extract($source_dir . $media->getFileName(), $media->getMediaType());
+        $meta = MediaMetadata::extract($source_dir . $media->file_name, $media->media_type);
         $media->setWidth($meta['width'])
             ->setHeight($meta['height'])
             ->setDuration($meta['duration'])
@@ -292,7 +313,7 @@ class MediaCollection
             $this->createThumbnail($media, $source_dir);
         }
 
-        return $media->getMediaId();
+        return $media->media_id;
     }
 
     /**
@@ -301,8 +322,8 @@ class MediaCollection
      */
     public function refreshMetadata(Media $media): bool
     {
-        $path = self::MEDIA_DIRECTORY_FULL . $media->getFileName();
-        $meta = MediaMetadata::extract($path, $media->getMediaType());
+        $path = self::MEDIA_DIRECTORY_FULL . $media->file_name;
+        $meta = MediaMetadata::extract($path, $media->media_type);
 
         $media->setWidth($meta['width'])
             ->setHeight($meta['height'])
@@ -314,14 +335,16 @@ class MediaCollection
 
     /**
      * Deletes a media item from the database and filesystem.
+     *
+     * @throws \OutOfBoundsException If the media item does not exist in the database.
      */
     public function delete(Media $media): bool
     {
         $success = $this->storage->delete($media);
 
         if ($success) {
-            $file_path = self::MEDIA_DIRECTORY_FULL . $media->getFileName();
-            $base_name = pathinfo($media->getFileName(), PATHINFO_FILENAME);
+            $file_path = self::MEDIA_DIRECTORY_FULL . $media->file_name;
+            $base_name = pathinfo($media->file_name, PATHINFO_FILENAME);
             $thumb_1x = self::MEDIA_DIRECTORY_THUMBNAILS . $base_name . '.webp';
             $thumb_2x = self::MEDIA_DIRECTORY_THUMBNAILS . $base_name . '@2x.webp';
 

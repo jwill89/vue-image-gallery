@@ -2,11 +2,10 @@
 
 namespace Routes\Internal;
 
-use Psr\Container\ContainerInterface;
 use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
-use Gallery\Collection\DanbooruRulesCollection;
-use Gallery\Collection\TagCategoryCollection;
+use Gallery\Repository\DanbooruRulesRepository;
+use Gallery\Repository\TagCategoryRepository;
 
 /**
  * DanbooruController
@@ -14,12 +13,12 @@ use Gallery\Collection\TagCategoryCollection;
  */
 class DanbooruController extends AbstractController
 {
-    private DanbooruRulesCollection $rules;
-    private TagCategoryCollection $categories;
+    private DanbooruRulesRepository $rules;
+    private TagCategoryRepository $categories;
 
-    public function __construct(ContainerInterface $container, DanbooruRulesCollection $rules, TagCategoryCollection $categories)
+    public function __construct(DanbooruRulesRepository $rules, TagCategoryRepository $categories)
     {
-        parent::__construct($container);
+        parent::__construct();
         $this->rules = $rules;
         $this->categories = $categories;
     }
@@ -28,6 +27,9 @@ class DanbooruController extends AbstractController
     // Get all rules (category map + tag map)
     // ========================================================================
 
+    /**
+     * GET /danbooru/rules — All import rules (category map + tag-name map).
+     */
     public function getRules(Request $request, Response $response, array $args): Response
     {
         return $this->success($response, [
@@ -40,9 +42,13 @@ class DanbooruController extends AbstractController
     // Category Map CRUD
     // ========================================================================
 
+    /**
+     * POST /danbooru/category-map/add — Map a Danbooru category to a gallery category.
+     * Body: { danbooru_category_id: int, danbooru_category_name: string, gallery_category_id: int }
+     */
     public function addCategoryMapping(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody() ?? [];
+        $params = $this->parsedBody($request);
         $danbooruCategoryId = (int) ($params['danbooru_category_id'] ?? -1);
         $danbooruCategoryName = trim($params['danbooru_category_name'] ?? '');
         $galleryCategoryId = (int) ($params['gallery_category_id'] ?? 0);
@@ -75,9 +81,13 @@ class DanbooruController extends AbstractController
         return $this->success($response, $this->rules->getCategoryMappings());
     }
 
+    /**
+     * DELETE /danbooru/category-map/delete — Remove a category mapping.
+     * Body: { danbooru_category_id: int }
+     */
     public function deleteCategoryMapping(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody() ?? [];
+        $params = $this->parsedBody($request);
         $danbooruCategoryId = (int) ($params['danbooru_category_id'] ?? -1);
 
         if ($danbooruCategoryId < 0) {
@@ -97,9 +107,13 @@ class DanbooruController extends AbstractController
     // Tag Name Map CRUD
     // ========================================================================
 
+    /**
+     * POST /danbooru/tag-map/add — Map a Danbooru tag name to a gallery tag name.
+     * Body: { danbooru_tag: string, gallery_tag: string }
+     */
     public function addTagMapping(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody() ?? [];
+        $params = $this->parsedBody($request);
         $danbooruTag = trim($params['danbooru_tag'] ?? '');
         $galleryTag = trim($params['gallery_tag'] ?? '');
 
@@ -122,10 +136,14 @@ class DanbooruController extends AbstractController
         return $this->success($response, $this->rules->getTagMappings());
     }
 
+    /**
+     * PUT /danbooru/tag-map/edit/{id} — Update a tag-name mapping.
+     * Body: { danbooru_tag: string, gallery_tag: string }
+     */
     public function editTagMapping(Request $request, Response $response, array $args): Response
     {
         $id = (int) ($args['id'] ?? 0);
-        $params = $request->getParsedBody() ?? [];
+        $params = $this->parsedBody($request);
         $danbooruTag = trim($params['danbooru_tag'] ?? '');
         $galleryTag = trim($params['gallery_tag'] ?? '');
 
@@ -151,9 +169,13 @@ class DanbooruController extends AbstractController
         return $this->success($response, $this->rules->getTagMappings());
     }
 
+    /**
+     * DELETE /danbooru/tag-map/delete — Remove a tag-name mapping.
+     * Body: { id: int }
+     */
     public function deleteTagMapping(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody() ?? [];
+        $params = $this->parsedBody($request);
         $id = (int) ($params['id'] ?? 0);
 
         if ($id <= 0) {

@@ -131,6 +131,10 @@ try {
 
         // Compute MD5 hash to check for content duplicates
         $file_md5 = md5_file($file_path);
+        if ($file_md5 === false) {
+            $media_skipped++;
+            continue;
+        }
 
         if (isset($known_hashes[$file_md5])) {
             // Duplicate content — delete the new file
@@ -143,7 +147,7 @@ try {
         $media = new Media();
         $media->setMediaType($media_type)
             ->setFileName($file_name)
-            ->setFileTime(filemtime($file_path))
+            ->setFileTime((int) filemtime($file_path))
             ->setHash($file_md5);
 
         // Save (auto-creates thumbnail and fingerprint for images)

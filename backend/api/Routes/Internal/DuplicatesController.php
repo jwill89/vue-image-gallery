@@ -3,10 +3,10 @@
 namespace Routes\Internal;
 
 use PDO;
-use Psr\Container\ContainerInterface;
 use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
 use Gallery\Collection\MediaCollection;
+use Gallery\Core\CacheGroup;
 use Gallery\Core\DatabaseConnection;
 use Gallery\Core\DuplicateScanner;
 
@@ -21,14 +21,15 @@ class DuplicatesController extends AbstractController
 
     private const string DUPES_DIRECTORY = 'dupes/';
 
-    public function __construct(ContainerInterface $container, MediaCollection $media_collection)
+    public function __construct(MediaCollection $media_collection)
     {
-        parent::__construct($container);
+        parent::__construct();
         $this->media_collection = $media_collection;
     }
 
     /**
-     * Returns the latest duplicates report JSON.
+     * GET /duplicates/report — The latest duplicate-scan report, with dismissed
+     * pairs filtered out and each pair enriched with media file names/hashes.
      */
     public function getLatestReport(Request $request, Response $response, array $args): Response
     {
@@ -47,7 +48,7 @@ class DuplicatesController extends AbstractController
         usort($files, fn($a, $b) => filemtime($b) <=> filemtime($a));
 
         $latest_file = $files[0];
-        $content = file_get_contents($latest_file);
+        $content = (string) file_get_contents($latest_file);
 
         try {
             $data = json_decode($content, true, 512, JSON_THROW_ON_ERROR);
@@ -96,7 +97,7 @@ class DuplicatesController extends AbstractController
         $mediaById = [];
         if (!empty($neededIds)) {
             foreach ($this->media_collection->getByIds(array_keys($neededIds)) as $media) {
-                $mediaById[$media->getMediaId()] = $media;
+                $mediaById[$media->media_id] = $media;
             }
         }
 
@@ -112,13 +113,13 @@ class DuplicatesController extends AbstractController
             $enriched_matches[] = [
                 'media_1' => [
                     'media_id' => $id1,
-                    'file_name' => $media1->getFileName(),
-                    'hash' => $media1->getHash(),
+                    'file_name' => $media1->file_name,
+                    'hash' => $media1->hash,
                 ],
                 'media_2' => [
                     'media_id' => $id2,
-                    'file_name' => $media2->getFileName(),
-                    'hash' => $media2->getHash(),
+                    'file_name' => $media2->file_name,
+                    'hash' => $media2->hash,
                 ],
                 'distance' => $distance,
                 'ssim' => $ssim,
@@ -137,7 +138,8 @@ class DuplicatesController extends AbstractController
     }
 
     /**
-     * Executes the duplicate scanner.
+     * POST /duplicates/scan — Run the perceptual-hash duplicate scanner and
+     * return summary stats (images compared, candidates, duplicates found).
      */
     public function runScan(Request $request, Response $response, array $args): Response
     {
@@ -168,7 +170,7 @@ class DuplicatesController extends AbstractController
      */
     public function dismissPair(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody();
+        $params = $this->parsedBody($request);
         $id1 = (int)($params['media_id_1'] ?? 0);
         $id2 = (int)($params['media_id_2'] ?? 0);
 
@@ -198,11 +200,12 @@ class DuplicatesController extends AbstractController
     }
 
     /**
-     * Deletes one or more media items by ID.
+     * DELETE /duplicates/media — Delete one or more media items by ID.
+     * Body: { media_ids: int[] }. Returns the deleted and failed ID lists.
      */
     public function deleteMedia(Request $request, Response $response, array $args): Response
     {
-        $params = $request->getParsedBody();
+        $params = $this->parsedBody($request);
         $media_ids = $params['media_ids'] ?? [];
 
         if (empty($media_ids) || !is_array($media_ids)) {
@@ -234,7 +237,7 @@ class DuplicatesController extends AbstractController
         }
 
         if (!empty($deleted)) {
-            $this->invalidateCache('media', 'tags');
+            $this->invalidateCache(CacheGroup::Media, CacheGroup::Tags);
         }
 
         return $this->success($response, [

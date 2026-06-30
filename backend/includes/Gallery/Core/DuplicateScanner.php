@@ -35,6 +35,10 @@ class DuplicateScanner
 
     /**
      * Run the duplicate scan on image media items.
+     *
+     * @return array<string, mixed> Report data (generated_at, images_compared,
+     *                              lsh_candidates, duplicates_found,
+     *                              execution_time_seconds, matches), or [] if skipped.
      */
     public function run(): array
     {
@@ -312,10 +316,12 @@ class DuplicateScanner
 
         // AVIF support: constant exists in PHP 8.1+ but GD may lack the function
         if (defined('IMAGETYPE_AVIF') && $type === IMAGETYPE_AVIF) {
-            return function_exists('imagecreatefromavif') ? @imagecreatefromavif($path) : null;
+            $avif = function_exists('imagecreatefromavif') ? @imagecreatefromavif($path) : null;
+            return $avif ?: null;
         }
 
-        return match ($type) {
+        // The imagecreatefrom* functions return GdImage|false; normalize false to null.
+        $img = match ($type) {
             IMAGETYPE_JPEG => @imagecreatefromjpeg($path),
             IMAGETYPE_PNG  => @imagecreatefrompng($path),
             IMAGETYPE_GIF  => @imagecreatefromgif($path),
@@ -323,6 +329,8 @@ class DuplicateScanner
             IMAGETYPE_BMP  => @imagecreatefrombmp($path),
             default        => null,
         };
+
+        return $img ?: null;
     }
 
     /**
@@ -351,6 +359,9 @@ class DuplicateScanner
      * Uses 8x8 sliding windows with the standard SSIM formula.
      *
      * Constants: C1 = (0.01*255)^2, C2 = (0.03*255)^2
+     *
+     * @param float[] $lum1
+     * @param float[] $lum2
      */
     private function ssimFromLuminance(array $lum1, array $lum2): float
     {
@@ -438,6 +449,10 @@ class DuplicateScanner
         return min($id1, $id2) . ':' . max($id1, $id2);
     }
 
+    /**
+     * @param array<string, mixed> $result
+     * @throws \RuntimeException If the report directory cannot be created.
+     */
     private function saveReport(array $result): void
     {
         if (!is_dir($this->reportDirectory)) {

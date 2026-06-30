@@ -2,10 +2,10 @@
 
 namespace Routes\Internal;
 
-use Psr\Container\ContainerInterface;
 use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
 use Gallery\Collection\MediaCollection;
+use Gallery\Core\CacheGroup;
 use Gallery\Core\DanbooruTagger;
 use Gallery\Structure\Media;
 
@@ -17,15 +17,19 @@ use Gallery\Structure\Media;
 class UploadController extends AbstractController
 {
     private MediaCollection $media_collection;
+    private DanbooruTagger $tagger;
 
     private const array IMAGE_EXTENSIONS = ['jpg', 'jpeg', 'png', 'gif', 'webp', 'bmp', 'tiff', 'tif', 'avif'];
     private const array VIDEO_EXTENSIONS = ['mp4', 'webm', 'mov', 'avi', 'mkv', 'flv', 'wmv', 'm4v'];
     private const int MAX_FILE_SIZE = 500 * 1024 * 1024; // 500 MB
 
-    public function __construct(ContainerInterface $container, MediaCollection $media_collection)
+    public function __construct(MediaCollection $media_collection, DanbooruTagger $tagger)
     {
-        parent::__construct($container);
+        parent::__construct();
         $this->media_collection = $media_collection;
+        // The tagger is lazy: it only warms its DB caches on first import, so
+        // injecting it here is cheap even when an upload doesn't fetch tags.
+        $this->tagger = $tagger;
     }
 
     /**
@@ -34,7 +38,7 @@ class UploadController extends AbstractController
      */
     public function uploadMedia(Request $request, Response $response): Response
     {
-        $params = $request->getParsedBody() ?? [];
+        $params = $this->parsedBody($request);
 
         $uploaded_files = $request->getUploadedFiles();
         $files = $uploaded_files['files'] ?? [];
@@ -53,7 +57,7 @@ class UploadController extends AbstractController
         $all_extensions = array_merge(self::IMAGE_EXTENSIONS, self::VIDEO_EXTENSIONS);
         $target_dir = MediaCollection::getFullDirectory();
 
-        $tagger = $fetchTags ? $this->container->get(DanbooruTagger::class) : null;
+        $tagger = $fetchTags ? $this->tagger : null;
         $totalTagsApplied = 0;
 
         $results = [];
@@ -69,7 +73,7 @@ class UploadController extends AbstractController
                 continue;
             }
 
-            $original_name = $file->getClientFilename();
+            $original_name = $file->getClientFilename() ?? '';
             $ext = strtolower(pathinfo($original_name, PATHINFO_EXTENSION));
 
             if (!in_array($ext, $all_extensions, true)) {
@@ -90,7 +94,7 @@ class UploadController extends AbstractController
                 continue;
             }
 
-            $safe_name = preg_replace('/[^a-zA-Z0-9._-]/', '_', $original_name);
+            $safe_name = (string) preg_replace('/[^a-zA-Z0-9._-]/', '_', $original_name);
 
             $base = pathinfo($safe_name, PATHINFO_FILENAME);
             $dest_path = $target_dir . $safe_name;
@@ -138,6 +142,15 @@ class UploadController extends AbstractController
 
             // Compute MD5 hash and check for duplicates
             $md5 = md5_file($dest_path);
+            if ($md5 === false) {
+                unlink($dest_path);
+                $results[] = [
+                    'file_name' => $original_name,
+                    'status' => 'error',
+                    'message' => 'Could not read the uploaded file.',
+                ];
+                continue;
+            }
             $existing_id = $this->media_collection->findIdByHash($md5);
 
             if ($existing_id !== null) {
@@ -218,9 +231,9 @@ class UploadController extends AbstractController
         $failed = count($results) - $succeeded - $duplicates;
 
         if ($succeeded > 0) {
-            $groups = ['media'];
+            $groups = [CacheGroup::Media];
             if ($totalTagsApplied > 0) {
-                $groups[] = 'tags';
+                $groups[] = CacheGroup::Tags;
             }
             $this->invalidateCache(...$groups);
         }

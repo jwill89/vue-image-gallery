@@ -28,7 +28,10 @@ set_time_limit(1800);
 $verbose = false;
 $singleMediaId = null;
 
-foreach (array_slice($argv, 1) as $arg) {
+/** @var list<string> $cliArgs CLI arguments (requires register_argc_argv, on by default for CLI). */
+$cliArgs = $_SERVER['argv'] ?? [];
+
+foreach (array_slice($cliArgs, 1) as $arg) {
     if ($arg === '--help' || $arg === '-h') {
         echo "Usage: php scripts/tag_imports.php [options] [media_id]\n\n";
         echo "  media_id  (optional) Process only the specified media ID\n\n";

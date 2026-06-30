@@ -31,15 +31,15 @@ final class StructureTest extends TestCase
             'file_size'  => 2048,
         ]);
 
-        $this->assertSame(7, $media->getMediaId());
-        $this->assertSame('video', $media->getMediaType());
-        $this->assertSame('clip.mp4', $media->getFileName());
-        $this->assertSame(1700000000, $media->getFileTime());
-        $this->assertSame('abc123', $media->getHash());
-        $this->assertSame(1920, $media->getWidth());
-        $this->assertSame(1080, $media->getHeight());
-        $this->assertSame(12.5, $media->getDuration());
-        $this->assertSame(2048, $media->getFileSize());
+        $this->assertSame(7, $media->media_id);
+        $this->assertSame('video', $media->media_type);
+        $this->assertSame('clip.mp4', $media->file_name);
+        $this->assertSame(1700000000, $media->file_time);
+        $this->assertSame('abc123', $media->hash);
+        $this->assertSame(1920, $media->width);
+        $this->assertSame(1080, $media->height);
+        $this->assertSame(12.5, $media->duration);
+        $this->assertSame(2048, $media->file_size);
         $this->assertTrue($media->isVideo());
         $this->assertFalse($media->isImage());
     }
@@ -48,11 +48,11 @@ final class StructureTest extends TestCase
     {
         $media = new Media();
 
-        $this->assertSame(0, $media->getMediaId());
-        $this->assertSame('image', $media->getMediaType());
-        $this->assertSame('', $media->getFileName());
-        $this->assertSame(0.0, $media->getDuration());
-        $this->assertSame('', $media->getBitsFingerprint());
+        $this->assertSame(0, $media->media_id);
+        $this->assertSame('image', $media->media_type);
+        $this->assertSame('', $media->file_name);
+        $this->assertSame(0.0, $media->duration);
+        $this->assertSame('', $media->bits_fingerprint);
         $this->assertTrue($media->isImage());
         $this->assertFalse($media->isVideo());
     }
@@ -68,19 +68,19 @@ final class StructureTest extends TestCase
             ->setFileSize(1234)
             ->setBitsFingerprint('1010');
 
-        $this->assertSame('pic.png', $media->getFileName());
-        $this->assertSame('deadbeef', $media->getHash());
-        $this->assertSame(800, $media->getWidth());
-        $this->assertSame(600, $media->getHeight());
-        $this->assertSame(1234, $media->getFileSize());
-        $this->assertSame('1010', $media->getBitsFingerprint());
+        $this->assertSame('pic.png', $media->file_name);
+        $this->assertSame('deadbeef', $media->hash);
+        $this->assertSame(800, $media->width);
+        $this->assertSame(600, $media->height);
+        $this->assertSame(1234, $media->file_size);
+        $this->assertSame('1010', $media->bits_fingerprint);
     }
 
     public function testUnknownConstructorKeysAreIgnored(): void
     {
         $tag = new Tag(['tag_id' => 5, 'does_not_exist' => 'x']);
 
-        $this->assertSame(5, $tag->getTagId());
+        $this->assertSame(5, $tag->tag_id);
         $this->assertObjectNotHasProperty('does_not_exist', $tag);
     }
 
@@ -88,16 +88,16 @@ final class StructureTest extends TestCase
     {
         $tag = (new Tag())->setTagId(3)->setCategoryId(2)->setTagName('forest');
 
-        $this->assertSame(3, $tag->getTagId());
-        $this->assertSame(2, $tag->getCategoryId());
-        $this->assertSame('forest', $tag->getTagName());
+        $this->assertSame(3, $tag->tag_id);
+        $this->assertSame(2, $tag->category_id);
+        $this->assertSame('forest', $tag->tag_name);
     }
 
     public function testTagCategoryDefaultsAndAccessors(): void
     {
         $cat = new TagCategory();
-        $this->assertSame('white', $cat->getColor());
-        $this->assertSame(0, $cat->getSortOrder());
+        $this->assertSame('white', $cat->color);
+        $this->assertSame(0, $cat->sort_order);
 
         $cat->setCategoryName('Character')
             ->setCategoryShort('char')
@@ -105,11 +105,11 @@ final class StructureTest extends TestCase
             ->setSortOrder(2)
             ->setDescription('People');
 
-        $this->assertSame('Character', $cat->getCategoryName());
-        $this->assertSame('char', $cat->getCategoryShort());
-        $this->assertSame('teal', $cat->getColor());
-        $this->assertSame(2, $cat->getSortOrder());
-        $this->assertSame('People', $cat->getDescription());
+        $this->assertSame('Character', $cat->category_name);
+        $this->assertSame('char', $cat->category_short);
+        $this->assertSame('teal', $cat->color);
+        $this->assertSame(2, $cat->sort_order);
+        $this->assertSame('People', $cat->description);
     }
 
     public function testJsonSerializeReturnsAllDeclaredProperties(): void
@@ -141,8 +141,8 @@ final class StructureTest extends TestCase
         $tag = new Tag(['tag_id' => 1, 'tag_name' => 'old']);
         $tag->setProperties(['tag_name' => 'new', 'category_id' => 4]);
 
-        $this->assertSame('new', $tag->getTagName());
-        $this->assertSame(4, $tag->getCategoryId());
-        $this->assertSame(1, $tag->getTagId());
+        $this->assertSame('new', $tag->tag_name);
+        $this->assertSame(4, $tag->category_id);
+        $this->assertSame(1, $tag->tag_id);
     }
 }
