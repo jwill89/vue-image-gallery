@@ -52,17 +52,19 @@ export function getCategoryClassById(categoryId: number): string {
 }
 
 /**
- * Get the tag class for a given category name.
+ * Get the tag class for a given category name. A null/unknown name yields the
+ * default class (category_name can be null on tags whose category was removed).
  */
-export function getCategoryClassByName(categoryName: string): string {
+export function getCategoryClassByName(categoryName: string | null | undefined): string {
   const cat = findCategory(c => c.category_name === categoryName)
   return cat ? colorToTagClass(cat.color) : 'is-white'
 }
 
 /**
- * Get the text class for a given category name.
+ * Get the text class for a given category name. A null/unknown name yields the
+ * default class.
  */
-export function getTextClassByName(categoryName: string): string {
+export function getTextClassByName(categoryName: string | null | undefined): string {
   const cat = findCategory(c => c.category_name === categoryName)
   return cat ? colorToTextClass(cat.color) : 'has-text-white'
 }

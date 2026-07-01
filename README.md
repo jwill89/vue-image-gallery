@@ -6,9 +6,10 @@ include/exclude tag search, automatic tag importing from Danbooru, perceptual
 duplicate detection, favorites, and admin-gated uploads.
 
 > - **[AGENTS.md](AGENTS.md)** — in-depth architecture, data model, and conventions.
-> - **[backend/API.md](backend/API.md)** — HTTP API endpoint reference.
+> - **[backend/API.md](backend/API.md)** — HTTP API reference. The live contract is the
+>   OpenAPI 3.1 spec at `/api/openapi.json`, browsable at **`/api/docs`** (Scalar).
 > - **[CONTRIBUTING.md](CONTRIBUTING.md)** — local setup, coding standards, and PR flow.
-> - **[CHANGELOG.md](CHANGELOG.md)** — release history (current version: **2.0.2**).
+> - **[CHANGELOG.md](CHANGELOG.md)** — release history (current version: **3.0.0**).
 
 ---
 
@@ -102,6 +103,21 @@ your PHP backend must be running):
 cd frontend
 npm run dev              # http://localhost:5173
 ```
+
+### API contract & generated types
+
+The API is a **hybrid REST-RPC** interface described by an **OpenAPI 3.1** spec
+(generated from PHP attributes) and browsable via **Scalar** at `/api/docs`. After
+changing any backend route or response shape, regenerate the spec and the frontend
+types and commit both (CI enforces they stay in sync):
+
+```bash
+cd backend  && composer docs      # → backend/openapi.json (needs zircote/swagger-php)
+cd frontend && npm run gen:types  # → frontend/src/types/api.generated.ts (openapi-typescript)
+```
+
+Frontend code imports domain types from `frontend/src/types` and endpoint paths
+from `frontend/src/api/endpoints.ts` — never the generated file directly.
 
 ## Deploying
 

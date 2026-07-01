@@ -5,6 +5,8 @@ import { useGalleryStore } from '../stores/gallery'
 import { useApi, hasAuthToken, clearAuthToken } from '../composables/useApi'
 import { useFavoritesStore } from '../stores/favorites'
 import { useToastStore } from '../stores/toast'
+import { endpoints } from '../api/endpoints'
+import type { Media } from '../types'
 import TagSearchInput from './TagSearchInput.vue'
 
 const router = useRouter()
@@ -69,11 +71,11 @@ async function navigateRandom() {
       toastStore.info('The gallery is empty. Upload some media first.', 4000, 'No Media')
       return
     }
-    const item = await api.get<Record<string, unknown>>('/media/random/')
+    const item = await api.get<Media>(endpoints.media.random)
 
     // Clear gallery context so arrow keys are disabled for random access
     store.lastViewedItemIds = []
-    router.push({ name: 'media-tags', params: { id: item.media_id as number } })
+    router.push({ name: 'media-tags', params: { id: item.media_id } })
   } catch {
     toastStore.error('Could not load a random media item. Please try again.', 6000, 'Random Failed')
   }

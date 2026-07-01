@@ -3,28 +3,9 @@ import { ref, onMounted, computed } from 'vue'
 import { useApi, hasAuthToken, setAuthToken } from '../composables/useApi'
 import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
+import { endpoints } from '../api/endpoints'
+import type { DuplicateReport, DuplicateMatch, BulkDeleteResult, LoginResponse } from '../types'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
-
-interface DupeMedia {
-  media_id: number
-  file_name: string
-  hash: string
-}
-
-interface DupeMatch {
-  media_1: DupeMedia
-  media_2: DupeMedia
-  distance: number | null
-  ssim: number | null
-}
-
-interface DupeReport {
-  report_file: string
-  generated_at: string | null
-  images_compared: number | null
-  duplicates_found: number
-  matches: DupeMatch[]
-}
 
 const api = useApi()
 const store = useGalleryStore()
@@ -36,7 +17,7 @@ const passwordInput = ref('')
 const authError = ref<string | null>(null)
 const authLoading = ref(false)
 
-const report = ref<DupeReport | null>(null)
+const report = ref<DuplicateReport | null>(null)
 const loading = ref(false)
 const loadFailed = ref(false)
 const scanning = ref(false)
@@ -51,7 +32,7 @@ async function login() {
   authLoading.value = true
   authError.value = null
   try {
-    const result = await api.post<{ token: string }>('/auth/login/', { password: passwordInput.value })
+    const result = await api.post<LoginResponse>(endpoints.auth.login, { password: passwordInput.value })
     setAuthToken(result.token)
     authenticated.value = true
     passwordInput.value = ''
@@ -68,7 +49,7 @@ async function loadReport() {
   loadFailed.value = false
 
   try {
-    report.value = await api.get<DupeReport>('/duplicates/report/')
+    report.value = await api.get<DuplicateReport>(endpoints.duplicates.report)
   } catch (e: any) {
     const status = e?.status ?? 0
     if (status === 401) {
@@ -91,7 +72,7 @@ async function runScan() {
   scanning.value = true
 
   try {
-    await api.post('/duplicates/scan/', {})
+    await api.post(endpoints.duplicates.scan, {})
     toastStore.success('The duplicate scan is complete. Loading results...', 4000, 'Scan Complete')
     selectedMedia.value.clear()
     await loadReport()
@@ -110,7 +91,7 @@ async function deleteSelected() {
 
   try {
     const ids = Array.from(selectedMedia.value)
-    const result = await api.del<{ deleted: number[], failed: number[], total_deleted: number }>('/duplicates/media/', { media_ids: ids })
+    const result = await api.post<BulkDeleteResult>(endpoints.media.bulkDelete, { media_ids: ids })
     toastStore.success(
       `${result.total_deleted} media item(s) removed from the database.`,
       4000,
@@ -126,12 +107,12 @@ async function deleteSelected() {
   }
 }
 
-async function dismissPair(match: DupeMatch) {
+async function dismissPair(match: DuplicateMatch) {
   const pairKey = `${match.media_1.media_id}:${match.media_2.media_id}`
   dismissing.value = pairKey
 
   try {
-    await api.post('/duplicates/dismiss/', {
+    await api.post(endpoints.duplicates.dismissals, {
       media_id_1: match.media_1.media_id,
       media_id_2: match.media_2.media_id,
     })

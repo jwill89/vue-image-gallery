@@ -8,10 +8,12 @@ use Gallery\Collection\MediaCollection;
 use Gallery\Core\CacheGroup;
 use Gallery\Core\DanbooruTagger;
 use Gallery\Structure\Media;
+use OpenApi\Attributes as OA;
 
 /**
  * UploadController class
- * Handles authenticated file uploads for all media types.
+ * Handles authenticated file uploads for all media types (the RESTful create
+ * of a media resource — POST /media, multipart/form-data).
  * Files are saved directly to the appropriate full/ subdirectory.
  */
 class UploadController extends AbstractController
@@ -33,10 +35,32 @@ class UploadController extends AbstractController
     }
 
     /**
-     * POST /upload/media/ — Upload one or more files.
+     * POST /media — Upload one or more files (multipart/form-data with files[]).
      * Media type is auto-detected from each file's extension.
      */
-    public function uploadMedia(Request $request, Response $response): Response
+    #[OA\Post(
+        path: '/media',
+        summary: 'Upload media (create)',
+        tags: ['Media'],
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\MediaType(
+                mediaType: 'multipart/form-data',
+                schema: new OA\Schema(
+                    properties: [
+                        new OA\Property(property: 'files[]', type: 'array', items: new OA\Items(type: 'string', format: 'binary')),
+                        new OA\Property(property: 'fetch_tags', type: 'boolean', description: 'Fetch Danbooru tags for uploaded images.'),
+                    ]
+                )
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: 'Upload result', content: new OA\JsonContent(ref: '#/components/schemas/UploadSummary')),
+            new OA\Response(response: 400, description: 'NoFilesUploaded', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
+    public function create(Request $request, Response $response): Response
     {
         $params = $this->parsedBody($request);
 
@@ -249,6 +273,6 @@ class UploadController extends AbstractController
             $responseData['total_tags_applied'] = $totalTagsApplied;
         }
 
-        return $this->success($response, $responseData);
+        return $this->created($response, $responseData);
     }
 }

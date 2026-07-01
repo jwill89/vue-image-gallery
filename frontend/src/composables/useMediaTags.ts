@@ -1,7 +1,9 @@
 import { ref } from 'vue'
 import { useApi } from './useApi'
 import { useToastStore } from '../stores/toast'
-import { useGalleryStore, type Tag, type MediaItem } from '../stores/gallery'
+import { useGalleryStore } from '../stores/gallery'
+import { endpoints } from '../api/endpoints'
+import type { Tag, MediaItem } from '../types'
 
 export function useMediaTags() {
   const api = useApi()
@@ -18,8 +20,8 @@ export function useMediaTags() {
 
     try {
       const [item, itemTags] = await Promise.all([
-        api.get<MediaItem>(`/media/${mediaId}/`),
-        api.get<Tag[]>(`/tags/for/media/${mediaId}/`)
+        api.get<MediaItem>(endpoints.media.byId(mediaId)),
+        api.get<Tag[]>(endpoints.media.tags(mediaId))
       ])
       mediaItem.value = item
       tags.value = itemTags ?? []
@@ -33,7 +35,7 @@ export function useMediaTags() {
 
   async function addTags(mediaId: number, tagIds: number[]) {
     try {
-      const updatedTags = await api.patch<Tag[]>(`/tags/media/add/`, { item_id: mediaId, tag_ids: tagIds })
+      const updatedTags = await api.patch<Tag[]>(endpoints.media.tags(mediaId), { tag_ids: tagIds })
       tags.value = updatedTags ?? []
       await store.refreshTags()
     } catch (e: any) {
@@ -43,7 +45,7 @@ export function useMediaTags() {
 
   async function removeTag(mediaId: number, tagId: number) {
     try {
-      const updatedTags = await api.patch<Tag[]>(`/tags/media/remove/`, { item_id: mediaId, tag_id: tagId })
+      const updatedTags = await api.del<Tag[]>(endpoints.media.removeTag(mediaId, tagId))
       tags.value = updatedTags ?? []
     } catch (e: any) {
       toastStore.error(e.message || 'Failed to remove tag')

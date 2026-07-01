@@ -6,72 +6,42 @@ use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
 use Gallery\Core\CacheGroup;
 use Gallery\Core\ResponseCache;
-use Gallery\Core\DanbooruTagger;
 use Gallery\Repository\TagRepository;
 use Gallery\Repository\TagCategoryRepository;
-use Gallery\Collection\MediaCollection;
 use Gallery\Structure\Tag;
-use Gallery\Structure\TagCategory;
+use OpenApi\Attributes as OA;
 
 /**
- * TagController class
- * Handles tag-related API requests with unified media support.
+ * TagController
+ * Tag CRUD and tag-to-tag migration. Tag categories and implications live in
+ * their own controllers; media-scoped tagging lives in MediaController.
  */
 class TagController extends AbstractController
 {
     private const int MAX_TAG_NAME_LENGTH = 100;
-    private const int MAX_CATEGORY_NAME_LENGTH = 50;
-    private const int MAX_SHORTCODE_LENGTH = 5;
-    private const array VALID_COLORS = [
-        // Bulma built-in
-        'white', 'light', 'dark', 'primary', 'link', 'info', 'success', 'warning', 'danger',
-        // Extended palette (defined in frontend style.css)
-        'teal', 'purple', 'pink', 'orange', 'cyan', 'lime', 'indigo', 'rose', 'amber', 'emerald',
-    ];
 
     private TagRepository $tag_repository;
     private TagCategoryRepository $category_repository;
-    private MediaCollection $media_collection;
-    private DanbooruTagger $tagger;
 
-    public function __construct(
-        TagRepository $tag_repository,
-        TagCategoryRepository $category_repository,
-        MediaCollection $media_collection,
-        DanbooruTagger $tagger
-    ) {
+    public function __construct(TagRepository $tag_repository, TagCategoryRepository $category_repository)
+    {
         parent::__construct();
         $this->tag_repository = $tag_repository;
         $this->category_repository = $category_repository;
-        $this->media_collection = $media_collection;
-        // Lazy: warms its DB caches only on first import, so injecting it for
-        // every tag request (most of which never touch Danbooru) stays cheap.
-        $this->tagger = $tagger;
     }
 
     /**
-     * GET /tags/tag/{tag_id} — A single tag by ID.
+     * GET /tags — All tags (id, name, category). Cached.
      */
-    public function getTag(Request $request, Response $response, array $args): Response
-    {
-        $tag_id = $this->parseParameters($args, 'tag_id', null);
-
-        if ($tag_id === null) {
-            return $this->error($response, 'NoTagIDProvided', 400, 'A tag ID is required.');
-        }
-
-        if (!is_numeric($tag_id) || $tag_id <= 0) {
-            return $this->error($response, 'InvalidTagID', 400, 'The tag ID must be a positive number.');
-        }
-
-        $data = $this->tag_repository->get((int)$tag_id);
-        return $this->success($response, $data);
-    }
-
-    /**
-     * GET /tags/all — All tags (id, name, category). Cached.
-     */
-    public function getAllTags(Request $request, Response $response, array $args): Response
+    #[OA\Get(
+        path: '/tags',
+        summary: 'List all tags',
+        tags: ['Tags'],
+        responses: [
+            new OA\Response(response: 200, description: 'All tags', content: new OA\JsonContent(type: 'array', items: new OA\Items(ref: '#/components/schemas/Tag'))),
+        ]
+    )]
+    public function getAllTags(Request $request, Response $response): Response
     {
         return $this->cachedSuccess($response, CacheGroup::Tags, 'all', ResponseCache::TTL_MEDIUM, function () {
             return $this->tag_repository->getAll();
@@ -82,7 +52,15 @@ class TagController extends AbstractController
      * GET /tags/display — All tags with category and usage/implication counts,
      * for the tags-management page. Cached.
      */
-    public function getTagListForDisplay(Request $request, Response $response, array $args): Response
+    #[OA\Get(
+        path: '/tags/display',
+        summary: 'List tags with category and usage counts',
+        tags: ['Tags'],
+        responses: [
+            new OA\Response(response: 200, description: 'Tags with counts', content: new OA\JsonContent(type: 'array', items: new OA\Items(ref: '#/components/schemas/TagListItem'))),
+        ]
+    )]
+    public function getTagListForDisplay(Request $request, Response $response): Response
     {
         return $this->cachedSuccess($response, CacheGroup::Tags, 'display', ResponseCache::TTL_MEDIUM, function () {
             return $this->tag_repository->getAllForPage();
@@ -90,10 +68,57 @@ class TagController extends AbstractController
     }
 
     /**
-     * POST /tags/add — Create a tag.
-     * Body: { tag_name: string, category_id?: int (default 1) }
+     * GET /tags/{tag_id} — A single tag by ID.
      */
-    public function addTag(Request $request, Response $response, array $args): Response
+    #[OA\Get(
+        path: '/tags/{tag_id}',
+        summary: 'A single tag',
+        tags: ['Tags'],
+        parameters: [new OA\Parameter(name: 'tag_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 200, description: 'The tag', content: new OA\JsonContent(ref: '#/components/schemas/Tag')),
+            new OA\Response(response: 404, description: 'TagDoesNotExist', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
+    public function getTag(Request $request, Response $response, array $args): Response
+    {
+        $tag_id = $this->intParam($args, 'tag_id', 0);
+
+        if ($tag_id <= 0) {
+            return $this->error($response, 'InvalidTagID', 400, 'The tag ID must be a positive number.');
+        }
+
+        $tag = $this->tag_repository->get($tag_id);
+        return $tag instanceof Tag
+            ? $this->success($response, $tag)
+            : $this->error($response, 'TagDoesNotExist', 404, 'The requested tag could not be found.');
+    }
+
+    /**
+     * POST /tags — Create a tag. Body: { tag_name, category_id? (default 1) }.
+     * Returns the created tag.
+     */
+    #[OA\Post(
+        path: '/tags',
+        summary: 'Create a tag',
+        tags: ['Tags'],
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['tag_name'],
+                properties: [
+                    new OA\Property(property: 'tag_name', type: 'string'),
+                    new OA\Property(property: 'category_id', type: 'integer', default: 1),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 201, description: 'The created tag', content: new OA\JsonContent(ref: '#/components/schemas/Tag')),
+            new OA\Response(response: 400, description: 'InvalidTagName / TagAlreadyExists', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
+    public function addTag(Request $request, Response $response): Response
     {
         $params = $this->parsedBody($request);
         $tag_name = $this->sanitizeTagName($this->stringParam($params, 'tag_name'));
@@ -123,13 +148,34 @@ class TagController extends AbstractController
 
         $this->invalidateCache(CacheGroup::Tags);
         $this->logger->info('Tag created', ['tag_id' => $tag_id, 'tag_name' => $tag_name, 'category_id' => $tag_category]);
-        return $this->success($response, true);
+        return $this->created($response, $tag);
     }
 
     /**
-     * PUT /tags/edit/{tag_id} — Rename and/or recategorize a tag.
-     * Body: { tag_name: string, category_id?: int (default 1) }
+     * PUT /tags/{tag_id} — Rename and/or recategorize a tag.
+     * Body: { tag_name, category_id? (default 1) }. Returns the updated tag.
      */
+    #[OA\Put(
+        path: '/tags/{tag_id}',
+        summary: 'Update a tag',
+        tags: ['Tags'],
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'tag_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['tag_name'],
+                properties: [
+                    new OA\Property(property: 'tag_name', type: 'string'),
+                    new OA\Property(property: 'category_id', type: 'integer', default: 1),
+                ]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'The updated tag', content: new OA\JsonContent(ref: '#/components/schemas/Tag')),
+            new OA\Response(response: 404, description: 'TagDoesNotExist', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
     public function editTag(Request $request, Response $response, array $args): Response
     {
         $params = $this->parsedBody($request);
@@ -165,167 +211,43 @@ class TagController extends AbstractController
 
         $this->invalidateCache(CacheGroup::Tags);
         $this->logger->info('Tag edited', ['tag_id' => $tag_id, 'tag_name' => $tag_name, 'category_id' => $tag_category]);
-        return $this->success($response, true);
+        return $this->success($response, $tag);
     }
 
     /**
-     * GET /tags/for/media/{media_id} — Tags applied to a media item. Cached.
+     * DELETE /tags/{tag_id} — Delete a tag.
+     * DELETE /tags/{tag_id}/migrate-to/{target_tag_id} — migrate this tag's media
+     * to the target first, then delete this tag.
      */
-    public function getTagsForMedia(Request $request, Response $response, array $args): Response
-    {
-        $media_id = $this->parseParameters($args, 'media_id', 0);
-
-        if (!is_numeric($media_id) || $media_id <= 0) {
-            return $this->error($response, 'InvalidMediaID', 400, 'The media ID must be a positive number.');
-        }
-
-        $media = $this->media_collection->get((int)$media_id);
-
-        if ($media === null) {
-            return $this->error($response, 'MediaDoesNotExist', 404, 'The media item could not be found.');
-        }
-
-        return $this->cachedSuccess($response, CacheGroup::Tags, "for:media:{$media_id}", ResponseCache::TTL_SHORT, function () use ($media) {
-            return $this->tag_repository->getTagsForMedia($media);
-        });
-    }
-
-    /**
-     * PATCH /tags/media/add — Apply tags to a media item (implications resolved).
-     * Body: { item_id: int, tag_ids: int[] }. Returns the item's updated tag list.
-     */
-    public function addTagsToMedia(Request $request, Response $response, array $args): Response
-    {
-        $params = $this->parsedBody($request);
-        $media_id = $this->intParam($params, 'item_id', 0);
-        $tag_ids_raw = $this->parseParameters($params, 'tag_ids', []);
-
-        if ($media_id <= 0) {
-            return $this->error($response, 'InvalidMediaID', 400, 'The media ID must be a positive number.');
-        }
-
-        $media = $this->media_collection->get($media_id);
-
-        if ($media === null) {
-            return $this->error($response, 'MediaDoesNotExist', 404, 'The media item could not be found.');
-        }
-
-        $tag_ids = array_filter(array_map('intval', (array)$tag_ids_raw), fn($id) => $id > 0);
-
-        if (empty($tag_ids)) {
-            return $this->error($response, 'InvalidTagList', 400, 'At least one valid tag must be provided.');
-        }
-
-        // Validate that every supplied tag exists in a single query (no N+1).
-        $existing_ids = $this->tag_repository->getExistingIds($tag_ids);
-        $missing = array_values(array_diff($tag_ids, $existing_ids));
-        if (!empty($missing)) {
-            return $this->error($response, 'TagDoesNotExist', 404, "Tag #{$missing[0]} does not exist.");
-        }
-
-        $success = $this->tag_repository->addTagsToMedia($media, $tag_ids);
-
-        if (!$success) {
-            $this->logger->error('Failed to add tags to media', ['media_id' => $media_id, 'tag_ids' => $tag_ids]);
-            return $this->error($response, 'CouldNotAddTagsToMedia', 500, 'Failed to add tags to the media item. Please try again.');
-        }
-
-        $this->invalidateCache(CacheGroup::Media, CacheGroup::Tags);
-        $this->logger->info('Tags added to media', ['media_id' => $media_id, 'tag_ids' => $tag_ids]);
-
-        $data = $this->tag_repository->getTagsForMedia($media);
-        return $this->success($response, $data);
-    }
-
-    /**
-     * PATCH /tags/media/remove — Remove a tag from a media item.
-     * Body: { item_id: int, tag_id: int }. Returns the item's updated tag list.
-     */
-    public function removeTagFromMedia(Request $request, Response $response, array $args): Response
-    {
-        $params = $this->parsedBody($request);
-        $media_id = $this->intParam($params, 'item_id', 0);
-        $tag_id = $this->intParam($params, 'tag_id', 0);
-
-        if ($media_id <= 0) {
-            return $this->error($response, 'InvalidMediaID', 400, 'The media ID must be a positive number.');
-        }
-
-        $media = $this->media_collection->get($media_id);
-
-        if ($media === null) {
-            return $this->error($response, 'MediaDoesNotExist', 404, 'The media item could not be found.');
-        }
-
-        if ($tag_id <= 0) {
-            return $this->error($response, 'InvalidTagID', 400, 'The tag ID must be a positive number.');
-        }
-
-        $tag = $this->tag_repository->get($tag_id);
-        if (!($tag instanceof Tag)) {
-            return $this->error($response, 'CouldNotFindTag', 404, 'The tag to remove could not be found.');
-        }
-
-        $removed = $this->tag_repository->removeTagFromMedia($media, $tag);
-
-        if (!$removed) {
-            $this->logger->error('Failed to remove tag from media', ['media_id' => $media_id, 'tag_id' => $tag_id]);
-            return $this->error($response, 'CouldNotRemoveTagFromMedia', 500, 'Failed to remove the tag. Please try again.');
-        }
-
-        $this->invalidateCache(CacheGroup::Media, CacheGroup::Tags);
-        $this->logger->info('Tag removed from media', ['media_id' => $media_id, 'tag_id' => $tag_id]);
-
-        $data = $this->tag_repository->getTagsForMedia($media);
-        return $this->success($response, $data);
-    }
-
-    /**
-     * POST /tags/migrate — Move all media from the source tag to the target,
-     * then delete the source. Body: { source_tag_id: int, target_tag_id: int }
-     */
-    public function migrateTag(Request $request, Response $response, array $args): Response
-    {
-        $params = $this->parsedBody($request);
-        $source_id = $this->intParam($params, 'source_tag_id', 0);
-        $target_id = $this->intParam($params, 'target_tag_id', 0);
-
-        if ($source_id <= 0 || $target_id <= 0) {
-            return $this->error($response, 'InvalidTagID', 400, 'Both source and target tag IDs must be positive numbers.');
-        }
-
-        if ($source_id === $target_id) {
-            return $this->error($response, 'CannotMigrateToSelf', 400, 'A tag cannot be migrated to itself.');
-        }
-
-        $sourceTag = $this->tag_repository->get($source_id);
-        $targetTag = $this->tag_repository->get($target_id);
-
-        if (!($sourceTag instanceof Tag) || !($targetTag instanceof Tag)) {
-            return $this->error($response, 'TagDoesNotExist', 404, 'The source or target tag could not be found.');
-        }
-
-        $success = $this->tag_repository->migrateTag($sourceTag, $targetTag);
-
-        if (!$success) {
-            $this->logger->error('Failed to migrate tag', ['source' => $source_id, 'target' => $target_id]);
-            return $this->error($response, 'CouldNotMigrateTag', 500, 'Tag migration failed. Please try again.');
-        }
-
-        $this->invalidateCache(CacheGroup::Tags, CacheGroup::Media);
-        $this->logger->info('Tag migrated', ['source' => $source_id, 'target' => $target_id]);
-        return $this->success($response, true);
-    }
-
-    /**
-     * DELETE /tags/delete — Delete a tag, optionally migrating its media to
-     * another tag first. Body: { tag_id: int, migrate_to_tag_id?: int }
-     */
+    #[OA\Delete(
+        path: '/tags/{tag_id}',
+        summary: 'Delete a tag',
+        tags: ['Tags'],
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'tag_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 204, description: 'Deleted'),
+            new OA\Response(response: 404, description: 'TagDoesNotExist', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
+    #[OA\Delete(
+        path: '/tags/{tag_id}/migrate-to/{target_tag_id}',
+        summary: 'Migrate a tag\'s media to another tag, then delete it',
+        tags: ['Tags'],
+        security: [['bearerAuth' => []]],
+        parameters: [
+            new OA\Parameter(name: 'tag_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer')),
+            new OA\Parameter(name: 'target_tag_id', in: 'path', required: true, description: 'Migrate media to this tag before deleting.', schema: new OA\Schema(type: 'integer')),
+        ],
+        responses: [
+            new OA\Response(response: 204, description: 'Migrated and deleted'),
+            new OA\Response(response: 404, description: 'TagDoesNotExist / MigrationTargetDoesNotExist', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
     public function deleteTag(Request $request, Response $response, array $args): Response
     {
-        $params = $this->parsedBody($request);
-        $tag_id = $this->intParam($params, 'tag_id', 0);
-        $migrate_to_id = $this->intParam($params, 'migrate_to_tag_id', 0);
+        $tag_id = $this->intParam($args, 'tag_id', 0);
+        $migrate_to_id = $this->intParam($args, 'target_tag_id', 0);
 
         if ($tag_id <= 0) {
             return $this->error($response, 'InvalidTagID', 400, 'The tag ID must be a positive number.');
@@ -361,328 +283,73 @@ class TagController extends AbstractController
 
         $this->invalidateCache(CacheGroup::Tags, CacheGroup::Media);
         $this->logger->info('Tag deleted', ['tag_id' => $tag_id, 'migrated_to' => $migrate_to_id]);
-        return $this->success($response, true);
-    }
-
-    // ========================================================================
-    // Tag Category CRUD Endpoints
-    // ========================================================================
-
-    /**
-     * GET /tags/categories — All tag categories.
-     */
-    public function getCategories(Request $request, Response $response, array $args): Response
-    {
-        return $this->success($response, $this->category_repository->getAll());
+        return $this->noContent($response);
     }
 
     /**
-     * POST /tags/categories/add — Create a tag category.
-     * Body: { category_name: string, category_short: string, color?: string,
-     *         description?: string, sort_order?: int }
+     * POST /tags/{tag_id}/migrate — Move all media from this tag to the target,
+     * then delete this tag. Body: { target_tag_id }.
      */
-    public function addCategory(Request $request, Response $response, array $args): Response
+    #[OA\Post(
+        path: '/tags/{tag_id}/migrate',
+        summary: 'Migrate a tag into another',
+        tags: ['Tags'],
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'tag_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        requestBody: new OA\RequestBody(
+            required: true,
+            content: new OA\JsonContent(
+                required: ['target_tag_id'],
+                properties: [new OA\Property(property: 'target_tag_id', type: 'integer')]
+            )
+        ),
+        responses: [
+            new OA\Response(response: 200, description: 'Migration result', content: new OA\JsonContent(ref: '#/components/schemas/MigrateResult')),
+            new OA\Response(response: 404, description: 'TagDoesNotExist', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
+    public function migrateTag(Request $request, Response $response, array $args): Response
     {
-        $result = $this->buildValidatedCategory($response, $this->parsedBody($request));
-        if ($result instanceof Response) {
-            return $result;
-        }
-        $category = $result;
+        $source_id = $this->intParam($args, 'tag_id', 0);
+        $target_id = $this->intParam($this->parsedBody($request), 'target_tag_id', 0);
 
-        $id = $this->category_repository->save($category);
-        if ($id === 0) {
-            return $this->error($response, 'SaveFailed', 500, 'Could not create the category.');
+        if ($source_id <= 0 || $target_id <= 0) {
+            return $this->error($response, 'InvalidTagID', 400, 'Both source and target tag IDs must be positive numbers.');
         }
 
-        $this->invalidateCache(CacheGroup::Tags);
-        $this->logger->info('Category created', ['category_id' => $id, 'name' => $category->category_name]);
-        return $this->success($response, $this->category_repository->getAll());
-    }
-
-    /**
-     * PUT /tags/categories/edit/{category_id} — Update a tag category.
-     * Body: same fields as addCategory.
-     */
-    public function editCategory(Request $request, Response $response, array $args): Response
-    {
-        $categoryId = (int) ($args['category_id'] ?? 0);
-        if ($categoryId <= 0) {
-            return $this->error($response, 'InvalidInput', 400, 'A valid category ID is required.');
+        if ($source_id === $target_id) {
+            return $this->error($response, 'CannotMigrateToSelf', 400, 'A tag cannot be migrated to itself.');
         }
 
-        $existing = $this->category_repository->get($categoryId);
-        if ($existing === null) {
-            return $this->error($response, 'CategoryNotFound', 404, 'The category does not exist.');
+        $sourceTag = $this->tag_repository->get($source_id);
+        $targetTag = $this->tag_repository->get($target_id);
+
+        if (!($sourceTag instanceof Tag) || !($targetTag instanceof Tag)) {
+            return $this->error($response, 'TagDoesNotExist', 404, 'The source or target tag could not be found.');
         }
 
-        $result = $this->buildValidatedCategory($response, $this->parsedBody($request), $existing);
-        if ($result instanceof Response) {
-            return $result;
-        }
-        $category = $result;
-
-        if ($this->category_repository->save($category) === 0) {
-            return $this->error($response, 'SaveFailed', 500, 'Could not save the category.');
-        }
-
-        $this->invalidateCache(CacheGroup::Tags);
-        $this->logger->info('Category edited', ['category_id' => $categoryId, 'name' => $category->category_name]);
-        return $this->success($response, $this->category_repository->getAll());
-    }
-
-    /**
-     * DELETE /tags/categories/delete — Delete a category that has no tags.
-     * Body: { category_id: int }
-     */
-    public function deleteCategory(Request $request, Response $response, array $args): Response
-    {
-        $params = $this->parsedBody($request);
-        $categoryId = (int) ($params['category_id'] ?? 0);
-
-        if ($categoryId <= 0) {
-            return $this->error($response, 'InvalidInput', 400, 'A valid category ID is required.');
-        }
-
-        $category = $this->category_repository->get($categoryId);
-        if ($category === null) {
-            return $this->error($response, 'CategoryNotFound', 404, 'The category does not exist.');
-        }
-
-        $tagCount = $this->category_repository->countTags($categoryId);
-        if ($tagCount > 0) {
-            return $this->error(
-                $response,
-                'CategoryInUse',
-                400,
-                "Cannot delete \"{$category->category_name}\" because {$tagCount} tag(s) belong to it. Reassign them first."
-            );
-        }
-
-        $deleted = $this->category_repository->delete($category);
-        if (!$deleted) {
-            return $this->error($response, 'DeleteFailed', 500, 'Could not delete the category.');
-        }
-
-        $this->invalidateCache(CacheGroup::Tags);
-        $this->logger->info('Category deleted', ['category_id' => $categoryId]);
-        return $this->success($response, $this->category_repository->getAll());
-    }
-
-    // ========================================================================
-    // Tag Implication Endpoints
-    // ========================================================================
-
-    /**
-     * GET /tags/implications — All tag implications. Cached.
-     */
-    public function getImplications(Request $request, Response $response, array $args): Response
-    {
-        return $this->cachedSuccess($response, CacheGroup::Tags, 'implications', ResponseCache::TTL_MEDIUM, function () {
-            return $this->tag_repository->getAllImplications();
-        });
-    }
-
-    /**
-     * POST /tags/implications/add — Add "tag_id implies implied_tag_id".
-     * Body: { tag_id: int, implied_tag_id: int }. Rejects cycles and self-implication.
-     */
-    public function addImplication(Request $request, Response $response, array $args): Response
-    {
-        $params = $this->parsedBody($request);
-        $tag_id = $this->intParam($params, 'tag_id', 0);
-        $implied_tag_id = $this->intParam($params, 'implied_tag_id', 0);
-
-        if ($tag_id <= 0 || $implied_tag_id <= 0) {
-            return $this->error($response, 'InvalidTagID', 400, 'Both tag IDs must be positive numbers.');
-        }
-
-        if ($tag_id === $implied_tag_id) {
-            return $this->error($response, 'CannotImplySelf', 400, 'A tag cannot imply itself.');
-        }
-
-        $tag = $this->tag_repository->get($tag_id);
-        $impliedTag = $this->tag_repository->get($implied_tag_id);
-
-        if (!($tag instanceof Tag) || !($impliedTag instanceof Tag)) {
-            return $this->error($response, 'TagDoesNotExist', 404, 'One or both of the specified tags could not be found.');
-        }
-
-        $success = $this->tag_repository->addImplication($tag_id, $implied_tag_id);
+        $success = $this->tag_repository->migrateTag($sourceTag, $targetTag);
 
         if (!$success) {
-            return $this->error($response, 'CycleDetected', 400, 'This implication would create a circular dependency.');
+            $this->logger->error('Failed to migrate tag', ['source' => $source_id, 'target' => $target_id]);
+            return $this->error($response, 'CouldNotMigrateTag', 500, 'Tag migration failed. Please try again.');
         }
 
-        $this->invalidateCache(CacheGroup::Tags);
-        $this->logger->info('Tag implication added', ['tag_id' => $tag_id, 'implied_tag_id' => $implied_tag_id]);
-        return $this->success($response, $this->tag_repository->getAllImplications());
-    }
-
-    /**
-     * DELETE /tags/implications/remove — Remove an implication.
-     * Body: { tag_id: int, implied_tag_id: int }
-     */
-    public function removeImplication(Request $request, Response $response, array $args): Response
-    {
-        $params = $this->parsedBody($request);
-        $tag_id = $this->intParam($params, 'tag_id', 0);
-        $implied_tag_id = $this->intParam($params, 'implied_tag_id', 0);
-
-        if ($tag_id <= 0 || $implied_tag_id <= 0) {
-            return $this->error($response, 'InvalidTagID', 400, 'Both tag IDs must be positive numbers.');
-        }
-
-        $success = $this->tag_repository->removeImplication($tag_id, $implied_tag_id);
-
-        if (!$success) {
-            $this->logger->error('Failed to remove tag implication', ['tag_id' => $tag_id, 'implied_tag_id' => $implied_tag_id]);
-            return $this->error($response, 'CouldNotRemoveImplication', 500, 'The implication could not be removed. Please try again.');
-        }
-
-        $this->invalidateCache(CacheGroup::Tags);
-        $this->logger->info('Tag implication removed', ['tag_id' => $tag_id, 'implied_tag_id' => $implied_tag_id]);
-        return $this->success($response, $this->tag_repository->getAllImplications());
-    }
-
-    // ========================================================================
-    // Danbooru Tag Import
-    // ========================================================================
-
-    /**
-     * POST /tags/danbooru-fetch — Fetch tags from Danbooru for a media item.
-     *
-     * Accepts either:
-     *   - media_id only: auto-lookup by MD5 hash, then IQDB visual similarity
-     *   - media_id + danbooru_post_id: import tags directly from that Danbooru post
-     *
-     * Returns the updated tag list for the media item.
-     */
-    public function fetchDanbooruTags(Request $request, Response $response, array $args): Response
-    {
-        $params = $this->parsedBody($request);
-        $mediaId = (int) ($params['media_id'] ?? 0);
-        $danbooruPostId = (int) ($params['danbooru_post_id'] ?? 0);
-
-        if ($mediaId <= 0) {
-            return $this->error($response, 'InvalidMediaID', 400, 'A valid media ID is required.');
-        }
-
-        if (!DanbooruTagger::isConfigured()) {
-            return $this->error(
-                $response,
-                'DanbooruNotConfigured',
-                500,
-                'Danbooru credentials are not configured on the server.'
-            );
-        }
-
-        $media = $this->media_collection->get($mediaId);
-        if ($media === null) {
-            return $this->error($response, 'MediaDoesNotExist', 404, 'The media item could not be found.');
-        }
-
-        if ($danbooruPostId > 0) {
-            // Direct post ID import
-            $result = $this->tagger->importTagsFromPost($mediaId, $danbooruPostId);
-        } else {
-            // Auto-lookup: MD5 first, then IQDB fallback
-            $result = $this->tagger->importTagsForMedia($mediaId, $media->hash, $media->file_name);
-        }
-
-        if (!$result['found']) {
-            return $this->error(
-                $response,
-                'NotFoundOnDanbooru',
-                404,
-                $danbooruPostId > 0
-                    ? "Danbooru post #{$danbooruPostId} could not be found."
-                : 'This media could not be found on Danbooru by hash or visual similarity.'
-            );
-        }
-
-        $this->invalidateCache(CacheGroup::Media, CacheGroup::Tags);
-        $this->logger->info('Danbooru tags imported', [
-            'media_id' => $mediaId,
-            'method' => $result['method'],
-            'tags_applied' => $result['tags_applied'],
-            'tags_created' => $result['tags_created'],
+        $this->invalidateCache(CacheGroup::Tags, CacheGroup::Media);
+        $this->logger->info('Tag migrated', ['source' => $source_id, 'target' => $target_id]);
+        return $this->success($response, [
+            'migrated' => true,
+            'source_tag_id' => $source_id,
+            'target_tag_id' => $target_id,
         ]);
-
-        // Refresh the global tag list (new tags may have been created)
-        $store_tags = $this->tag_repository->getAll();
-
-        $data = [
-            'tags' => $this->tag_repository->getTagsForMedia($media),
-            'all_tags' => $store_tags,
-            'method' => $result['method'],
-            'tags_applied' => $result['tags_applied'],
-            'tags_created' => $result['tags_created'],
-        ];
-
-        return $this->success($response, $data);
     }
-
-    // ========================================================================
-    // Private helpers
-    // ========================================================================
 
     /**
-     * Validates category input from the request and applies it to a TagCategory.
-     *
-     * Shared by addCategory()/editCategory(). On success it returns the populated
-     * category — a fresh one, or $existing mutated in place. On any validation
-     * failure it returns the error Response to send back. When $existing is given
-     * its ID is excluded from the name/shortcode conflict check.
-     *
-     * @param array<string, mixed> $params
-     * @return TagCategory|Response
+     * Normalizes a tag name: trim, lowercase, strip tags/control chars, and
+     * drop any leading '-' (which would otherwise read as a search exclusion).
      */
-    private function buildValidatedCategory(Response $response, array $params, ?TagCategory $existing = null): TagCategory|Response
-    {
-        $name = trim($params['category_name'] ?? '');
-        $short = trim(strtolower($params['category_short'] ?? ''));
-        $color = trim($params['color'] ?? 'white');
-        $description = trim($params['description'] ?? '');
-        $sortOrder = (int) ($params['sort_order'] ?? 0);
-
-        if (empty($name)) {
-            return $this->error($response, 'InvalidInput', 400, 'Category name is required.');
-        }
-        if (mb_strlen($name) > self::MAX_CATEGORY_NAME_LENGTH) {
-            return $this->error($response, 'NameTooLong', 400, 'Category name must be ' . self::MAX_CATEGORY_NAME_LENGTH . ' characters or fewer.');
-        }
-        if (empty($short)) {
-            return $this->error($response, 'InvalidInput', 400, 'A shortcode is required.');
-        }
-        if (mb_strlen($short) > self::MAX_SHORTCODE_LENGTH) {
-            return $this->error($response, 'ShortcodeTooLong', 400, 'Shortcode must be ' . self::MAX_SHORTCODE_LENGTH . ' characters or fewer.');
-        }
-        if (!in_array($color, self::VALID_COLORS, true)) {
-            return $this->error($response, 'InvalidColor', 400, 'The selected color is not valid.');
-        }
-
-        $excludeId = $existing instanceof TagCategory ? $existing->category_id : 0;
-        $conflicts = $this->category_repository->checkConflicts($name, $short, $excludeId);
-        if (in_array('name', $conflicts, true)) {
-            return $this->error($response, 'NameTaken', 400, "A category named \"{$name}\" already exists.");
-        }
-        if (in_array('short', $conflicts, true)) {
-            return $this->error($response, 'ShortcodeTaken', 400, "The shortcode \"{$short}\" is already in use.");
-        }
-
-        $category = $existing ?? new TagCategory();
-        return $category->setCategoryName($name)
-                 ->setCategoryShort($short)
-                 ->setColor($color)
-                 ->setDescription($description)
-                 ->setSortOrder($sortOrder);
-    }
-
     private function sanitizeTagName(string $tag_name): string
     {
-        // Apply the cleanup steps left-to-right via the pipe operator (PHP 8.5).
-        // Single-argument transforms use first-class callable syntax; the two
-        // that need a second argument are wrapped in a closure.
         return $tag_name
             |> trim(...)
             |> (fn(string $s): string => mb_strtolower($s, 'UTF-8'))

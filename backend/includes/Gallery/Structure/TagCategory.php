@@ -2,6 +2,8 @@
 
 namespace Gallery\Structure;
 
+use OpenApi\Attributes as OA;
+
 /**
  * TagCategory class
  * Represents a tag category in the gallery.
@@ -11,13 +13,20 @@ namespace Gallery\Structure;
  * private(set) lets PDO's FETCH_CLASS hydrate rows while blocking external
  * mutation.
  */
+#[OA\Schema(schema: 'TagCategory', description: 'A tag category (color, shortcode, sort order).')]
 class TagCategory extends AbstractStructure
 {
+    #[OA\Property(type: 'integer')]
     public private(set) int $category_id = 0;
+    #[OA\Property(type: 'string')]
     public private(set) string $category_name = '';
+    #[OA\Property(type: 'string', description: 'Short code (<= 5 chars) used in tag prefixes.')]
     public private(set) string $category_short = '';
+    #[OA\Property(type: 'string', description: 'Bulma/extended palette color name.')]
     public private(set) string $color = 'white';
+    #[OA\Property(type: 'string')]
     public private(set) string $description = '';
+    #[OA\Property(type: 'integer')]
     public private(set) int $sort_order = 0;
 
     public function setCategoryId(int $category_id): self

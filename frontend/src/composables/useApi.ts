@@ -68,6 +68,18 @@ export function hasAuthToken(): boolean {
   return !!sessionStorage.getItem('auth_token')
 }
 
+/**
+ * Read a successful response body as JSON. A `204 No Content` (and any other
+ * empty body) resolves to `undefined` rather than throwing on `response.json()`.
+ */
+async function parseJsonBody<T>(response: Response): Promise<T> {
+  if (response.status === 204) {
+    return undefined as T
+  }
+  const text = await response.text()
+  return (text ? JSON.parse(text) : undefined) as T
+}
+
 export function useApi() {
   async function request<T>(url: string, options: RequestInit = {}): Promise<T> {
     // Attach auth token if available
@@ -87,7 +99,7 @@ export function useApi() {
       }
       throw await parseApiError(response, url)
     }
-    return response.json() as Promise<T>
+    return parseJsonBody<T>(response)
   }
 
   function get<T>(url: string): Promise<T> {
@@ -145,7 +157,7 @@ export function useApi() {
       }
       throw await parseApiError(response, url)
     }
-    return response.json() as Promise<T>
+    return parseJsonBody<T>(response)
   }
 
   return { get, post, put, patch, del, upload }

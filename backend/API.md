@@ -1,51 +1,73 @@
 # Gallery API Reference
 
-Internal HTTP API for the self-hosted media gallery. All endpoints are served
-under the **`/api`** base path and return **JSON**.
+Internal **hybrid REST-RPC** HTTP API for the self-hosted media gallery. All
+endpoints are served under the **`/api`** base path and return **JSON**.
 
-This document is a quick reference. The authoritative contract lives in the
-controller docblocks under [`api/Routes/Internal/`](api/Routes/Internal/) and the
-route table in [`api/index.php`](api/index.php).
+The **authoritative, always-current contract** is the generated OpenAPI 3.1
+document. Browse it interactively or fetch the raw spec:
+
+- **Interactive reference (Scalar):** [`GET /api/docs`](docs)
+- **Raw spec:** [`GET /api/openapi.json`](openapi.json) — committed to the repo as
+  [`backend/openapi.json`](openapi.json), regenerated with `composer docs`.
+
+This document is a quick human-oriented overview; the annotations on the
+controllers under [`api/Routes/Internal/`](api/Routes/Internal/) and the structure
+classes under [`includes/Gallery/Structure/`](includes/Gallery/Structure/) are the source.
 
 ---
 
 ## Conventions
 
-### Response envelope
+### HTTP semantics
 
 | Outcome | Shape | Status |
 |---------|-------|--------|
-| Success | The payload directly — a resource object, an array of resources, or a bare `true` | `2xx` |
-| Error   | `{ "error": "<MachineCode>", "message": "<human text>" }` | `4xx` / `5xx` |
+| Read | The resource or collection | `200` |
+| Create | The created resource | `201` |
+| Update (`PUT`/`PATCH`) | The updated resource | `200` |
+| Delete | *(empty body)* | `204` |
+| RPC action / batch | A small result object | `200` (or `201` for a created record) |
+| Error | `{ "error": "<MachineCode>", "message": "<human text>" }` | `4xx` / `5xx` |
 
 - `error` is a stable PascalCase code (e.g. `MediaNotFound`) safe to branch on.
 - `message` is for display and may change.
-- Cached `GET`s also return an **`X-Cache: HIT|MISS`** header.
+- Cached `GET`s also carry an **`X-Cache: HIT|MISS`** header.
 
 ### Authentication
 
-Authentication is a **Bearer token** in the `Authorization` header:
+A **Bearer token** in the `Authorization` header:
 
 ```
 Authorization: Bearer <token>
 ```
 
-Obtain a token from [`POST /auth/login`](#auth) (valid for **24 hours**).
-
-The rule (enforced by middleware in `index.php`):
+Obtain a token from [`POST /auth/login`](#auth) (valid **24 hours**). The rule:
 
 - **All `GET` requests are public.**
-- **State-changing methods (`POST`/`PUT`/`PATCH`/`DELETE`) require a token**, with three intentionally-public exceptions on the allowlist: `POST /media/by-ids`, `PATCH /tags/media/add`, `PATCH /tags/media/remove` (plus `POST /auth/login` itself).
+- **State-changing methods require a token**, with an intentionally-public
+  allowlist matched by `(method, path)`: `POST /media/by-ids` (batched read),
+  `PATCH /media/{id}/tags`, and `DELETE /media/{id}/tags/{tag_id}` (anyone may tag),
+  plus `POST /auth/login` itself.
 
 In the tables below: 🌐 = public, 🔒 = token required.
 
 ### Rate limiting, CORS & CSRF
 
-- **Rate limit:** 120 requests / 60 s per IP globally; `POST /auth/login` is throttled separately at 10 attempts / 5 min. A `429` carries `Retry-After` and `X-RateLimit-Remaining` headers.
-- **CORS:** responses echo an allowed `Origin` (configured via `GALLERY_ALLOWED_ORIGINS`); credentials are allowed.
-- **CSRF:** state-changing requests must carry an `Origin` or `Referer` matching an allowed origin, or they are rejected with `403 ForbiddenOrigin`.
+- **Rate limit:** 120 requests / 60 s per IP; `POST /auth/login` is throttled
+  separately at 10 attempts / 5 min. A `429` carries `Retry-After`.
+- **CORS:** responses echo an allowed `Origin` (`GALLERY_ALLOWED_ORIGINS`); credentials allowed.
+- **CSRF:** state-changing requests must carry an `Origin`/`Referer` matching an
+  allowed origin, else `403 ForbiddenOrigin`.
 
 ---
+
+## System
+
+| Method | Path | Auth | Returns |
+|--------|------|------|---------|
+| GET | `/version` | 🌐 | `{ version, api_version }` |
+| GET | `/openapi.json` | 🌐 | The OpenAPI 3.1 document |
+| GET | `/docs` | 🌐 | Scalar API reference (HTML) |
 
 ## Auth
 
@@ -53,81 +75,66 @@ In the tables below: 🌐 = public, 🔒 = token required.
 |--------|------|------|------|---------|
 | POST | `/auth/login` | 🌐 | `{ password }` | `{ token }` |
 
----
-
 ## Media
 
 | Method | Path | Auth | Body / Params | Returns |
 |--------|------|------|---------------|---------|
+| GET | `/media/page/{page}[/{per_page}]` | 🌐 | `per_page` clamped 1–200 | `MediaPage` |
+| GET | `/media/untagged/{page}[/{per_page}]` | 🌐 | — | `MediaPage` |
+| GET | `/media/with-tags/{tag_list}/{page}[/{per_page}]` | 🌐 | `tag_list` comma-separated; leading `-` excludes (e.g. `cat,-dog`) | `MediaPage` |
 | GET | `/media/{media_id}` | 🌐 | — | `Media` |
 | GET | `/media/random` | 🌐 | — | `Media` |
-| GET | `/media/total` | 🌐 | — | `int` |
-| GET | `/media/page/{page}[/{items_per_page}]` | 🌐 | `items_per_page` clamped 1–200 | `{ items, total_pages, current_page }` |
-| GET | `/media/untagged/{page}[/{items_per_page}]` | 🌐 | — | `{ items, total_pages, current_page }` |
-| GET | `/media/with-tags/{tag_list}/{page}[/{items_per_page}]` | 🌐 | `tag_list` is comma-separated; a leading `-` excludes (e.g. `cat,-dog`) | `{ items, total_pages, current_page }` |
-| POST | `/media/by-ids` | 🌐 | `{ ids: int[] }` (max 200) | `Media[]` |
-| DELETE | `/media/{media_id}` | 🔒 | — | `{ deleted }` |
-
----
+| GET | `/media/count` | 🌐 | — | `{ count }` |
+| POST | `/media/by-ids` | 🌐 | `{ ids: int[] }` (≤ 200) | `Media[]` |
+| POST | `/media` | 🔒 | `multipart/form-data` `files[]` (+ optional `fetch_tags`) | `UploadSummary` (`201`) |
+| POST | `/media/bulk-delete` | 🔒 | `{ media_ids: int[] }` | `{ deleted, failed, total_deleted }` |
+| DELETE | `/media/{media_id}` | 🔒 | — | `204` |
+| GET | `/media/{media_id}/tags` | 🌐 | — | `Tag[]` |
+| PATCH | `/media/{media_id}/tags` | 🌐 | `{ tag_ids: int[] }` | updated `Tag[]` |
+| DELETE | `/media/{media_id}/tags/{tag_id}` | 🌐 | — | updated `Tag[]` |
+| POST | `/media/{media_id}/danbooru-tags` | 🔒 | `{ danbooru_post_id? }` | `DanbooruFetchResult` |
 
 ## Tags
 
 | Method | Path | Auth | Body / Params | Returns |
 |--------|------|------|---------------|---------|
-| GET | `/tags/all` | 🌐 | — | `Tag[]` |
-| GET | `/tags/display` | 🌐 | — | tags + category & usage/implication counts |
-| GET | `/tags/tag/{tag_id}` | 🌐 | — | `Tag` |
-| GET | `/tags/for/media/{media_id}` | 🌐 | — | `Tag[]` |
-| POST | `/tags/add` | 🔒 | `{ tag_name, category_id? }` | `true` |
-| PUT | `/tags/edit/{tag_id}` | 🔒 | `{ tag_name, category_id? }` | `true` |
-| PATCH | `/tags/media/add` | 🌐 | `{ item_id, tag_ids: int[] }` | updated `Tag[]` |
-| PATCH | `/tags/media/remove` | 🌐 | `{ item_id, tag_id }` | updated `Tag[]` |
-| POST | `/tags/migrate` | 🔒 | `{ source_tag_id, target_tag_id }` | `true` |
-| DELETE | `/tags/delete` | 🔒 | `{ tag_id, migrate_to_tag_id? }` | `true` |
-| POST | `/tags/danbooru-fetch` | 🔒 | `{ media_id, danbooru_post_id? }` | `{ tags, all_tags, method, tags_applied, tags_created }` |
+| GET | `/tags` | 🌐 | — | `Tag[]` |
+| GET | `/tags/display` | 🌐 | — | `TagListItem[]` (with category + counts) |
+| GET | `/tags/{tag_id}` | 🌐 | — | `Tag` |
+| POST | `/tags` | 🔒 | `{ tag_name, category_id? }` | `Tag` (`201`) |
+| PUT | `/tags/{tag_id}` | 🔒 | `{ tag_name, category_id? }` | `Tag` |
+| DELETE | `/tags/{tag_id}` | 🔒 | — | `204` |
+| DELETE | `/tags/{tag_id}/migrate-to/{target_tag_id}` | 🔒 | migrate media to the target, then delete | `204` |
+| POST | `/tags/{tag_id}/migrate` | 🔒 | `{ target_tag_id }` | `MigrateResult` |
 
 ### Tag categories
 
-| Method | Path | Auth | Body / Params | Returns |
-|--------|------|------|---------------|---------|
-| GET | `/tags/categories` | 🌐 | — | `TagCategory[]` |
-| POST | `/tags/categories/add` | 🔒 | `{ category_name, category_short, color?, description?, sort_order? }` | `TagCategory[]` |
-| PUT | `/tags/categories/edit/{category_id}` | 🔒 | same fields as add | `TagCategory[]` |
-| DELETE | `/tags/categories/delete` | 🔒 | `{ category_id }` (must have no tags) | `TagCategory[]` |
+| Method | Path | Auth | Body | Returns |
+|--------|------|------|------|---------|
+| GET | `/tag-categories` | 🌐 | — | `TagCategory[]` |
+| POST | `/tag-categories` | 🔒 | `{ category_name, category_short, color?, description?, sort_order? }` | `TagCategory` (`201`) |
+| PUT | `/tag-categories/{category_id}` | 🔒 | same fields as create | `TagCategory` |
+| DELETE | `/tag-categories/{category_id}` | 🔒 | — (must have no tags) | `204` |
 
 ### Tag implications
 
 | Method | Path | Auth | Body | Returns |
 |--------|------|------|------|---------|
-| GET | `/tags/implications` | 🌐 | — | implications list |
-| POST | `/tags/implications/add` | 🔒 | `{ tag_id, implied_tag_id }` (cycles rejected) | implications list |
-| DELETE | `/tags/implications/remove` | 🔒 | `{ tag_id, implied_tag_id }` | implications list |
-
----
+| GET | `/tag-implications` | 🌐 | — | `TagImplication[]` |
+| POST | `/tag-implications` | 🔒 | `{ tag_id, implied_tag_id }` (cycles rejected) | `TagImplication` (`201`) |
+| DELETE | `/tag-implications/{tag_id}/{implied_tag_id}` | 🔒 | — | `204` |
 
 ## Danbooru import rules
 
-| Method | Path | Auth | Body / Params | Returns |
-|--------|------|------|---------------|---------|
-| GET | `/danbooru/rules` | 🌐 | — | `{ category_mappings, tag_mappings }` |
-| POST | `/danbooru/category-map/add` | 🔒 | `{ danbooru_category_id, danbooru_category_name, gallery_category_id }` | category mappings |
-| DELETE | `/danbooru/category-map/delete` | 🔒 | `{ danbooru_category_id }` | category mappings |
-| POST | `/danbooru/tag-map/add` | 🔒 | `{ danbooru_tag, gallery_tag }` | tag mappings |
-| PUT | `/danbooru/tag-map/edit/{id}` | 🔒 | `{ danbooru_tag, gallery_tag }` | tag mappings |
-| DELETE | `/danbooru/tag-map/delete` | 🔒 | `{ id }` | tag mappings |
-
----
-
-## Upload
-
 | Method | Path | Auth | Body | Returns |
 |--------|------|------|------|---------|
-| POST | `/upload/media` | 🔒 | `multipart/form-data` with `files[]` (≤ 500 MB each); optional `fetch_tags` | `{ results, total_uploaded, total_duplicates, total_failed, total_tags_applied? }` |
-
-Media type is auto-detected from the file extension (animated GIFs are treated
-as video). Content type is verified server-side, not just the extension.
-
----
+| GET | `/danbooru/category-mappings` | 🌐 | — | `CategoryMapping[]` |
+| POST | `/danbooru/category-mappings` | 🔒 | `{ danbooru_category_id, danbooru_category_name, gallery_category_id }` | `CategoryMapping` (`201`) |
+| DELETE | `/danbooru/category-mappings/{danbooru_category_id}` | 🔒 | — | `204` |
+| GET | `/danbooru/tag-mappings` | 🌐 | — | `TagMapping[]` |
+| POST | `/danbooru/tag-mappings` | 🔒 | `{ danbooru_tag, gallery_tag }` | `TagMapping` (`201`) |
+| PUT | `/danbooru/tag-mappings/{id}` | 🔒 | `{ danbooru_tag, gallery_tag }` | `TagMapping` |
+| DELETE | `/danbooru/tag-mappings/{id}` | 🔒 | — | `204` |
 
 ## Duplicates
 
@@ -135,18 +142,16 @@ Duplicate detection is image-only, based on perceptual fingerprinting.
 
 | Method | Path | Auth | Body | Returns |
 |--------|------|------|------|---------|
-| GET | `/duplicates/report` | 🌐 | — | latest report with dismissed pairs filtered out |
-| POST | `/duplicates/scan` | 🔒 | — | `{ images_compared, lsh_candidates, duplicates_found, execution_time }` |
-| POST | `/duplicates/dismiss` | 🔒 | `{ media_id_1, media_id_2 }` | `{ dismissed, media_id_1, media_id_2 }` |
-| DELETE | `/duplicates/media` | 🔒 | `{ media_ids: int[] }` | `{ deleted, failed, total_deleted }` |
+| GET | `/duplicates/report` | 🔒 | — | `DuplicateReport` (dismissed pairs filtered out) |
+| POST | `/duplicates/scan` | 🔒 | — | `ScanResult` |
+| POST | `/duplicates/dismissals` | 🔒 | `{ media_id_1, media_id_2 }` | `{ dismissed, media_id_1, media_id_2 }` (`201`) |
 
 ---
 
 ## Resource shapes
 
-`Media`, `Tag`, and `TagCategory` are serialized from their
-[structure classes](includes/Gallery/Structure/) (all properties, snake_case):
-
-- **Media** — `media_id, media_type, file_name, file_time, hash, bits_fingerprint, width, height, duration, file_size`
-- **Tag** — `tag_id, category_id, tag_name`
-- **TagCategory** — `category_id, category_name, category_short, color, description, sort_order`
+Full JSON schemas for every resource (`Media`, `Tag`, `TagCategory`, `MediaPage`,
+`TagListItem`, `TagImplication`, `CategoryMapping`, `TagMapping`, `DuplicateReport`,
+`UploadSummary`, `DanbooruFetchResult`, …) live in the OpenAPI document under
+`components.schemas`. The frontend consumes them as generated TypeScript types
+(`frontend/src/types/api.generated.ts`, via `npm run gen:types`).

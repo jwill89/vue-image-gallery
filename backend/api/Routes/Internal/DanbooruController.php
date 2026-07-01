@@ -6,10 +6,12 @@ use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
 use Gallery\Repository\DanbooruRulesRepository;
 use Gallery\Repository\TagCategoryRepository;
+use OpenApi\Attributes as OA;
 
 /**
  * DanbooruController
- * Manages Danbooru import rules (category mappings and tag name mappings).
+ * Manages Danbooru import rules: the `/danbooru/category-mappings` and
+ * `/danbooru/tag-mappings` resources.
  */
 class DanbooruController extends AbstractController
 {
@@ -23,35 +25,53 @@ class DanbooruController extends AbstractController
         $this->categories = $categories;
     }
 
-    // ========================================================================
-    // Get all rules (category map + tag map)
-    // ========================================================================
+    // ── Category mappings ───────────────────────────────────────────────
 
     /**
-     * GET /danbooru/rules — All import rules (category map + tag-name map).
+     * GET /danbooru/category-mappings — All Danbooru→gallery category mappings.
      */
-    public function getRules(Request $request, Response $response, array $args): Response
+    #[OA\Get(
+        path: '/danbooru/category-mappings',
+        summary: 'List category mappings',
+        tags: ['Danbooru'],
+        responses: [
+            new OA\Response(response: 200, description: 'Category mappings', content: new OA\JsonContent(type: 'array', items: new OA\Items(ref: '#/components/schemas/CategoryMapping'))),
+        ]
+    )]
+    public function getCategoryMappings(Request $request, Response $response): Response
     {
-        return $this->success($response, [
-            'category_mappings' => $this->rules->getCategoryMappings(),
-            'tag_mappings' => $this->rules->getTagMappings(),
-        ]);
+        return $this->success($response, $this->rules->getCategoryMappings());
     }
 
-    // ========================================================================
-    // Category Map CRUD
-    // ========================================================================
-
     /**
-     * POST /danbooru/category-map/add — Map a Danbooru category to a gallery category.
-     * Body: { danbooru_category_id: int, danbooru_category_name: string, gallery_category_id: int }
+     * POST /danbooru/category-mappings — Map a Danbooru category to a gallery
+     * category. Body: { danbooru_category_id, danbooru_category_name, gallery_category_id }.
      */
-    public function addCategoryMapping(Request $request, Response $response, array $args): Response
+    #[OA\Post(
+        path: '/danbooru/category-mappings',
+        summary: 'Create a category mapping',
+        tags: ['Danbooru'],
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(
+            required: ['danbooru_category_id', 'danbooru_category_name', 'gallery_category_id'],
+            properties: [
+                new OA\Property(property: 'danbooru_category_id', type: 'integer'),
+                new OA\Property(property: 'danbooru_category_name', type: 'string'),
+                new OA\Property(property: 'gallery_category_id', type: 'integer'),
+            ]
+        )),
+        responses: [
+            new OA\Response(response: 201, description: 'The created mapping', content: new OA\JsonContent(ref: '#/components/schemas/CategoryMapping')),
+            new OA\Response(response: 400, description: 'InvalidInput', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+            new OA\Response(response: 404, description: 'CategoryNotFound', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
+    public function addCategoryMapping(Request $request, Response $response): Response
     {
         $params = $this->parsedBody($request);
-        $danbooruCategoryId = (int) ($params['danbooru_category_id'] ?? -1);
+        $danbooruCategoryId = $this->intParam($params, 'danbooru_category_id', -1);
         $danbooruCategoryName = trim($params['danbooru_category_name'] ?? '');
-        $galleryCategoryId = (int) ($params['gallery_category_id'] ?? 0);
+        $galleryCategoryId = $this->intParam($params, 'gallery_category_id', 0);
 
         if ($danbooruCategoryId < 0) {
             return $this->error($response, 'InvalidInput', 400, 'Danbooru category ID must be a non-negative integer.');
@@ -78,17 +98,31 @@ class DanbooruController extends AbstractController
             'gallery_category_id' => $galleryCategoryId,
         ]);
 
-        return $this->success($response, $this->rules->getCategoryMappings());
+        return $this->created($response, [
+            'danbooru_category_id' => $danbooruCategoryId,
+            'danbooru_category_name' => $danbooruCategoryName,
+            'gallery_category_id' => $galleryCategoryId,
+            'gallery_category_name' => $category->category_name,
+        ]);
     }
 
     /**
-     * DELETE /danbooru/category-map/delete — Remove a category mapping.
-     * Body: { danbooru_category_id: int }
+     * DELETE /danbooru/category-mappings/{danbooru_category_id} — Remove a mapping.
      */
+    #[OA\Delete(
+        path: '/danbooru/category-mappings/{danbooru_category_id}',
+        summary: 'Delete a category mapping',
+        tags: ['Danbooru'],
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'danbooru_category_id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 204, description: 'Deleted'),
+            new OA\Response(response: 400, description: 'InvalidInput', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
     public function deleteCategoryMapping(Request $request, Response $response, array $args): Response
     {
-        $params = $this->parsedBody($request);
-        $danbooruCategoryId = (int) ($params['danbooru_category_id'] ?? -1);
+        $danbooruCategoryId = $this->intParam($args, 'danbooru_category_id', -1);
 
         if ($danbooruCategoryId < 0) {
             return $this->error($response, 'InvalidInput', 400, 'Danbooru category ID must be a non-negative integer.');
@@ -100,18 +134,49 @@ class DanbooruController extends AbstractController
         }
 
         $this->logger->info('Danbooru category mapping deleted', ['danbooru_category_id' => $danbooruCategoryId]);
-        return $this->success($response, $this->rules->getCategoryMappings());
+        return $this->noContent($response);
     }
 
-    // ========================================================================
-    // Tag Name Map CRUD
-    // ========================================================================
+    // ── Tag name mappings ───────────────────────────────────────────────
 
     /**
-     * POST /danbooru/tag-map/add — Map a Danbooru tag name to a gallery tag name.
-     * Body: { danbooru_tag: string, gallery_tag: string }
+     * GET /danbooru/tag-mappings — All Danbooru→gallery tag-name mappings.
      */
-    public function addTagMapping(Request $request, Response $response, array $args): Response
+    #[OA\Get(
+        path: '/danbooru/tag-mappings',
+        summary: 'List tag name mappings',
+        tags: ['Danbooru'],
+        responses: [
+            new OA\Response(response: 200, description: 'Tag name mappings', content: new OA\JsonContent(type: 'array', items: new OA\Items(ref: '#/components/schemas/TagMapping'))),
+        ]
+    )]
+    public function getTagMappings(Request $request, Response $response): Response
+    {
+        return $this->success($response, $this->rules->getTagMappings());
+    }
+
+    /**
+     * POST /danbooru/tag-mappings — Map a Danbooru tag name to a gallery tag name.
+     * Body: { danbooru_tag, gallery_tag }.
+     */
+    #[OA\Post(
+        path: '/danbooru/tag-mappings',
+        summary: 'Create a tag name mapping',
+        tags: ['Danbooru'],
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(
+            required: ['danbooru_tag', 'gallery_tag'],
+            properties: [
+                new OA\Property(property: 'danbooru_tag', type: 'string'),
+                new OA\Property(property: 'gallery_tag', type: 'string'),
+            ]
+        )),
+        responses: [
+            new OA\Response(response: 201, description: 'The created mapping', content: new OA\JsonContent(ref: '#/components/schemas/TagMapping')),
+            new OA\Response(response: 400, description: 'InvalidInput / DuplicateMapping', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
+    public function addTagMapping(Request $request, Response $response): Response
     {
         $params = $this->parsedBody($request);
         $danbooruTag = trim($params['danbooru_tag'] ?? '');
@@ -133,16 +198,34 @@ class DanbooruController extends AbstractController
         }
 
         $this->logger->info('Danbooru tag mapping added', ['danbooru_tag' => $danbooruTag, 'gallery_tag' => $galleryTag]);
-        return $this->success($response, $this->rules->getTagMappings());
+        return $this->created($response, ['id' => $id, 'danbooru_tag' => $danbooruTag, 'gallery_tag' => $galleryTag]);
     }
 
     /**
-     * PUT /danbooru/tag-map/edit/{id} — Update a tag-name mapping.
-     * Body: { danbooru_tag: string, gallery_tag: string }
+     * PUT /danbooru/tag-mappings/{id} — Update a tag-name mapping.
+     * Body: { danbooru_tag, gallery_tag }.
      */
+    #[OA\Put(
+        path: '/danbooru/tag-mappings/{id}',
+        summary: 'Update a tag name mapping',
+        tags: ['Danbooru'],
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(
+            required: ['danbooru_tag', 'gallery_tag'],
+            properties: [
+                new OA\Property(property: 'danbooru_tag', type: 'string'),
+                new OA\Property(property: 'gallery_tag', type: 'string'),
+            ]
+        )),
+        responses: [
+            new OA\Response(response: 200, description: 'The updated mapping', content: new OA\JsonContent(ref: '#/components/schemas/TagMapping')),
+            new OA\Response(response: 400, description: 'InvalidInput / DuplicateMapping', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
     public function editTagMapping(Request $request, Response $response, array $args): Response
     {
-        $id = (int) ($args['id'] ?? 0);
+        $id = $this->intParam($args, 'id', 0);
         $params = $this->parsedBody($request);
         $danbooruTag = trim($params['danbooru_tag'] ?? '');
         $galleryTag = trim($params['gallery_tag'] ?? '');
@@ -166,17 +249,26 @@ class DanbooruController extends AbstractController
         }
 
         $this->logger->info('Danbooru tag mapping updated', ['id' => $id, 'danbooru_tag' => $danbooruTag]);
-        return $this->success($response, $this->rules->getTagMappings());
+        return $this->success($response, ['id' => $id, 'danbooru_tag' => $danbooruTag, 'gallery_tag' => $galleryTag]);
     }
 
     /**
-     * DELETE /danbooru/tag-map/delete — Remove a tag-name mapping.
-     * Body: { id: int }
+     * DELETE /danbooru/tag-mappings/{id} — Remove a tag-name mapping.
      */
+    #[OA\Delete(
+        path: '/danbooru/tag-mappings/{id}',
+        summary: 'Delete a tag name mapping',
+        tags: ['Danbooru'],
+        security: [['bearerAuth' => []]],
+        parameters: [new OA\Parameter(name: 'id', in: 'path', required: true, schema: new OA\Schema(type: 'integer'))],
+        responses: [
+            new OA\Response(response: 204, description: 'Deleted'),
+            new OA\Response(response: 400, description: 'InvalidInput', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
     public function deleteTagMapping(Request $request, Response $response, array $args): Response
     {
-        $params = $this->parsedBody($request);
-        $id = (int) ($params['id'] ?? 0);
+        $id = $this->intParam($args, 'id', 0);
 
         if ($id <= 0) {
             return $this->error($response, 'InvalidInput', 400, 'A valid mapping ID is required.');
@@ -188,6 +280,6 @@ class DanbooruController extends AbstractController
         }
 
         $this->logger->info('Danbooru tag mapping deleted', ['id' => $id]);
-        return $this->success($response, $this->rules->getTagMappings());
+        return $this->noContent($response);
     }
 }

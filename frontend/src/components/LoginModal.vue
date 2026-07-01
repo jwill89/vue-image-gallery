@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import { useApi, setAuthToken } from '../composables/useApi'
+import { endpoints } from '../api/endpoints'
+import type { LoginResponse } from '../types'
 
 const emit = defineEmits<{
   (e: 'authenticated'): void
@@ -15,7 +17,7 @@ async function login() {
   authLoading.value = true
   authError.value = null
   try {
-    const result = await api.post<{ token: string }>('/auth/login/', { password: passwordInput.value })
+    const result = await api.post<LoginResponse>(endpoints.auth.login, { password: passwordInput.value })
     setAuthToken(result.token)
     passwordInput.value = ''
     emit('authenticated')

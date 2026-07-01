@@ -61,21 +61,30 @@ via `__DIR__`/`chdir(__DIR__ . '/..')`, so `backend/` *is* the app root in both 
 │   ├── api/
 │   │   ├── .htaccess          # Routes everything to api/index.php
 │   │   ├── index.php          # Slim bootstrap: middleware stack + ALL route definitions
-│   │   ├── dependencies.php   # PHP-DI definitions: provides PDO, autowires Storage→Collection→Controller
-│   │   └── Routes/Internal/   # Controllers (namespace Routes\Internal)
-│   │       ├── AbstractController.php   # success()/error()/cachedSuccess()/invalidateCache()/resolveTagIds()
-│   │       ├── MediaController.php      # /media/*  (auth-protected for writes; /by-ids is public)
-│   │       ├── TagController.php        # /tags/*   (auth-protected for writes)
-│   │       ├── DanbooruController.php   # /danbooru/* import-rule CRUD (auth)
-│   │       ├── UploadController.php     # /upload/media (auth)
-│   │       └── DuplicatesController.php # /duplicates/* (auth)
+│   │   ├── dependencies.php   # PHP-DI definitions: provides PDO, autowires Repository/Collection→Controller
+│   │   ├── openapi.json       # generated (committed) — via `composer docs`; served at /api/openapi.json
+│   │   └── Routes/
+│   │       ├── OpenApiSpec.php          # global #[OA\Info/Server/SecurityScheme/Tag] metadata
+│   │       └── Internal/                # Controllers (namespace Routes\Internal), all #[OA\*]-annotated
+│   │           ├── AbstractController.php     # success()/created()/noContent()/error()/cachedSuccess()
+│   │           ├── SystemController.php       # /version, /openapi.json, /docs (Scalar)
+│   │           ├── AuthController.php         # /auth/login
+│   │           ├── MediaController.php        # /media/*  (list/read/upload/delete + media-scoped tags)
+│   │           ├── TagController.php          # /tags/*   (tag CRUD + migrate)
+│   │           ├── TagCategoryController.php  # /tag-categories/*
+│   │           ├── TagImplicationController.php # /tag-implications/*
+│   │           ├── DanbooruController.php     # /danbooru/{category,tag}-mappings
+│   │           ├── UploadController.php       # POST /media (multipart create)
+│   │           └── DuplicatesController.php   # /duplicates/*
 │   │
 │   ├── includes/Gallery/      # Domain layer (namespace Gallery\…)
-│   │   ├── Core/              # Configuration, DatabaseConnection, Logger, RateLimiter,
+│   │   ├── Core/              # Configuration (holds VERSION), DatabaseConnection, Logger, RateLimiter,
 │   │   │                      # ResponseCache, DanbooruTagger, DuplicateScanner, MediaThumbnail
-│   │   ├── Collection/        # "Service"/use-case layer (MediaCollection, TagCollection, …)
-│   │   ├── Storage/           # SQL data-access layer (MediaStorage, TagStorage, …)
-│   │   └── Structure/         # Plain data objects (Media, Tag, TagCategory) — JsonSerializable
+│   │   ├── Collection/        # "Service"/use-case layer (MediaCollection, …)
+│   │   ├── Repository/        # Data-access (TagRepository, TagCategoryRepository, DanbooruRulesRepository)
+│   │   ├── Storage/           # SQL data-access layer (MediaStorage)
+│   │   └── Structure/         # Plain data objects (Media, Tag, TagCategory) — JsonSerializable, #[OA\Schema]
+│   │       └── Api/           # Doc-only #[OA\Schema] classes for composite responses (MediaPage, …)
 │   │
 │   ├── db/
 │   │   ├── setup.php          # CLI bootstrap: ensures db/gallery.db exists, then runs Phinx migrations
@@ -247,42 +256,45 @@ Notes:
 
 ---
 
-## 5. API surface (all under `/api`, base path set in Slim)
+## 5. API surface (hybrid REST-RPC, all under `/api`)
 
-Auth column: 🔓 = no token required, 🔒 = bearer token required (state-changing, via `$authMiddleware`).
+The **authoritative contract** is the generated OpenAPI 3.1 spec
+(`api/openapi.json`, `composer docs`), served at **`/api/openapi.json`** and browsable
+via **Scalar** at **`/api/docs`**. `backend/API.md` is the human overview. Below is the
+shape; 🔓 = public, 🔒 = bearer token required.
 
-### Media (`/media`) — group has `$authMiddleware` (writes need a token; GETs are public)
-| Method | Path | Auth | Notes |
-|--------|------|------|-------|
-| GET | `/media/random` | 🔓 | random item |
-| POST | `/media/by-ids` | 🔓 | body `{ids:[…]}`, capped at 200 (allowlisted public read) |
-| GET | `/media/untagged/{page}[/{perPage}]` | 🔓 | |
-| GET | `/media/page/{page}[/{perPage}]` | 🔓 | cached (TTL_SHORT) |
-| GET | `/media/with-tags/{tag_list}/{page}[/{perPage}]` | 🔓 | `tag_list` comma-sep, `-tag` to exclude |
-| GET | `/media/total` | 🔓 | cached (TTL_MEDIUM) |
-| DELETE | `/media/{media_id}` | 🔒 | single-item delete |
-| GET | `/media[/{media_id}]` | 🔓 | no id → returns **all** media |
+REST-RPC conventions: reads → `200`, create → `201` (created resource), update → `200`
+(updated resource), delete → `204`, RPC action/batch → `200`. Non-CRUD state changes are
+`POST …/{verb}`.
 
-### Tags (`/tags`) — group is 🔒 for writes (GETs pass through; writes need token)
-Read: `/tags/all`, `/tags/display`, `/tags/tag/{id}`, `/tags/for/media/{id}`,
-`/tags/implications`, `/tags/categories`.
-Write 🔒: `/tags/add`, `/tags/edit/{id}`, `/tags/migrate`, `/tags/delete`,
-`/tags/implications/add`, `/tags/implications/remove`,
-`/tags/categories/add|edit/{id}|delete`, `/tags/danbooru-fetch`.
-Write 🔓 (explicitly exempted): **`PATCH /tags/media/add` and `PATCH /tags/media/remove`** —
-anyone can add/remove tags on media by design (see §7).
-
-### Other 🔒 groups
-- `/danbooru/rules` + category-map/tag-map CRUD
-- `/upload/media` (multipart, field name `files[]`)
-- `/duplicates/report|scan|dismiss|media`
-- `POST /auth/login` (🔓, password → token)
+- **System / Auth:** `GET /version`, `GET /openapi.json`, `GET /docs` (🔓); `POST /auth/login` (🔓).
+- **Media (`/media`):** path-based listings (cached) — `GET /media/page/{page}[/{per_page}]`,
+  `GET /media/untagged/{page}[/{per_page}]`, `GET /media/with-tags/{tag_list}/{page}[/{per_page}]`
+  (`tag_list` comma-sep, leading `-` excludes); `GET /media/{id}`, `GET /media/random`,
+  `GET /media/count`, `POST /media/by-ids` (🔓 batch read);
+  `POST /media` (🔒 multipart upload = create → 201), `POST /media/bulk-delete` (🔒),
+  `DELETE /media/{id}` (🔒 → 204). Media-scoped tags: `GET /media/{id}/tags` (🔓),
+  **`PATCH /media/{id}/tags`** and **`DELETE /media/{id}/tags/{tag_id}`** (🔓 — anyone may tag, see §7),
+  `POST /media/{id}/danbooru-tags` (🔒).
+- **Tags (`/tags`):** `GET /tags`, `GET /tags/display`, `GET /tags/{id}` (🔓);
+  `POST /tags` (→201), `PUT /tags/{id}`, `DELETE /tags/{id}`,
+  `DELETE /tags/{id}/migrate-to/{target_id}` (migrate then delete), `POST /tags/{id}/migrate` (🔒).
+- **Tag categories (`/tag-categories`):** `GET` (🔓); `POST` (→201), `PUT/DELETE /{id}` (🔒).
+- **Tag implications (`/tag-implications`):** `GET` (🔓); `POST` (→201),
+  `DELETE /{tag_id}/{implied_tag_id}` (🔒).
+- **Danbooru (`/danbooru`):** `GET` mappings (🔓); `POST/PUT/DELETE` on
+  `category-mappings[/{danbooru_category_id}]` and `tag-mappings[/{id}]` (🔒).
+- **Duplicates (`/duplicates`):** `GET /report`, `POST /scan`, `POST /dismissals` (🔒).
 
 ### Response conventions
-- Success: raw JSON of the data (controllers use `$this->success()` = `withJson`).
-- Error: `{ "error": "PascalCaseCode", "message": "human readable" }` + appropriate HTTP status.
-  Use `$this->error($response, 'CodeName', 4xx, 'message')`.
+
+- Reads return the resource/collection; creates `201` + resource; updates `200` + resource;
+  deletes `204`. Controllers use `$this->success()`/`created()`/`noContent()`.
+- Error: `{ "error": "PascalCaseCode", "message": "human readable" }` + status, via
+  `$this->error($response, 'CodeName', 4xx, 'message')`.
 - Cached GETs add `X-Cache: HIT|MISS`. Rate-limit info in `X-RateLimit-Remaining` / `Retry-After`.
+- Every action/schema is annotated with `#[OA\*]`; **regenerate `openapi.json` (`composer docs`) and
+  the frontend types (`npm run gen:types`) after any contract change** — CI fails if they drift.
 
 ---
 
@@ -296,8 +308,10 @@ Outermost → innermost:
 3. **CORS headers** (global) + adds `X-Frame-Options`, `X-Content-Type-Options`.
 4. **OPTIONS** catch-all → 204.
 5. **`$authMiddleware`** (per-group): requires a valid bearer token for state-changing methods,
-   except `/auth/login` and the public allowlist (`/tags/media/add`, `/tags/media/remove`,
-   `/media/by-ids`). Attached to **`/media`, `/tags`, `/danbooru`, `/upload`, `/duplicates`**.
+   except a public allowlist matched by exact `(method, path pattern)`: `POST /media/by-ids`,
+   `PATCH /media/{id}/tags`, `DELETE /media/{id}/tags/{tag_id}`. Attached to **`/media`, `/tags`,
+   `/tag-categories`, `/tag-implications`, `/danbooru`, `/duplicates`** (`/auth/login` and the System
+   GETs are their own unguarded routes).
 
 Auth = opaque random token (`bin2hex(random_bytes(32))`) stored in `auth_tokens`, valid 24h,
 sent as `Authorization: Bearer …`. Frontend stores it in `sessionStorage` (`useApi.ts`).
@@ -309,11 +323,13 @@ sent as `Authorization: Bearer …`. Frontend stores it in `sessionStorage` (`us
 Current, hardened behavior — keep these invariants when editing auth/routes:
 
 - **All state-changing routes require a bearer token**, enforced by `$authMiddleware` on the
-  `/media`, `/tags`, `/danbooru`, `/upload`, `/duplicates` groups (it only gates POST/PUT/PATCH/DELETE).
-  If you add a new write route, put it in one of those groups (or add the middleware to its group).
-- **Public allowlist** (state-changing methods that intentionally skip auth):
-  `/tags/media/add`, `/tags/media/remove` (anyone may tag media — *intentional* design choice), and
-  `/media/by-ids` (a read that uses POST only to carry a large id list). Don't add to this list lightly.
+  `/media`, `/tags`, `/tag-categories`, `/tag-implications`, `/danbooru`, `/duplicates` groups
+  (it only gates POST/PUT/PATCH/DELETE). If you add a new write route, put it in one of those groups.
+- **Public allowlist** (state-changing methods that intentionally skip auth), matched by exact
+  `(method, path pattern)`: `PATCH /media/{id}/tags`, `DELETE /media/{id}/tags/{tag_id}` (anyone may
+  tag media — *intentional* design choice), and `POST /media/by-ids` (a read that uses POST only to
+  carry a large id list). The exact match is deliberate so a public sub-route can't widen a protected
+  one (e.g. `DELETE /media/{id}` stays 🔒). Don't add to this list lightly.
 - **CSRF**: state-changing requests are rejected unless `Origin` (or, failing that, `Referer`) matches
   `GALLERY_ALLOWED_ORIGINS`. Requests with neither header are rejected.
 - **Login**: refused entirely if `GALLERY_ADMIN_PASSWORD` is unset (so the `'changeme'` default can't
@@ -333,9 +349,12 @@ which is fine given the token's entropy.
   `blurThumbnails` (persisted to `localStorage`), and `lastViewedItemIds` (used for prev/next
   navigation on the media detail page). `favorites` is a `Set<number>` persisted to `localStorage`.
   `toast` drives the global notification container.
-- **API calls** go through `composables/useApi.ts` (`get/post/put/patch/del/upload`). It auto-attaches
-  the bearer token, throws a structured `ApiError` (`status`, `code`, `message`), and clears the token
-  on 401. Don't call `fetch` directly in components.
+- **API calls** go through `composables/useApi.ts` (`get/post/put/patch/del/upload`), using paths from
+  `api/endpoints.ts`. It auto-attaches the bearer token, throws a structured `ApiError`
+  (`status`, `code`, `message`), clears the token on 401, and resolves `204`/empty bodies to
+  `undefined`. Don't call `fetch` directly in components.
+- **Types are generated** from the OpenAPI spec into `types/api.generated.ts` (`npm run gen:types`);
+  import domain types from `types/index.ts` (friendly `Required<>` aliases), never the generated file.
 - **Data-fetching composables**: `useGalleryData` (paginated lists), `useMediaTags` (detail + tag
   add/remove). Reuse them rather than re-implementing fetch logic.
 - **Routing**: lazy-loaded views in `router/index.ts`; page title from `meta.title`. `perPage=0`
@@ -343,7 +362,7 @@ which is fine given the token's entropy.
 - **Styling**: Bulma classes + helpers in `constants/categories.ts` that map a category's
   `color` to `is-<color>` / `has-text-<color>`. Extended colors (teal, purple, …) are defined in
   `style.css`. Keep the `VALID_COLORS` list in sync between `constants/categories.ts` (frontend) and
-  `TagController::VALID_COLORS` (backend).
+  `TagCategoryController::VALID_COLORS` (backend).
 - **Thumbnails**: derive from `file_name` by stripping the extension →
   `/media/thumbs/<base>.webp` (1x) and `/media/thumbs/<base>@2x.webp` (2x, used in `srcset`).
 - **Service worker** (`public/sw.js`): cache-first for thumbs/static assets, network-first for
@@ -379,10 +398,12 @@ which is fine given the token's entropy.
 - **`ffmpeg` must be on PATH** for thumbnail generation; **GD** (with WebP, ideally AVIF) is required
   for SSIM. On hosts where `exec()` is disabled, thumbnails silently won't generate. (Note:
   `php-ffmpeg/php-ffmpeg` was removed from `composer.json` — thumbnails shell out to `ffmpeg` directly.)
-- **CI runs lint, tests, and build.** GitHub Actions (`.github/workflows/ci.yml`) runs
-  `composer lint` (phpcs / PSR-12) + `composer test` (PHPUnit 13) on the backend, and
-  `npm run build` (vue-tsc + Vite) + `npm run test` (Vitest) on the frontend, with coverage
-  reported (no hard gate). Backend tests build a fresh in-memory SQLite DB from
+- **CI runs lint, static analysis, tests, and build.** GitHub Actions (`.github/workflows/ci.yml`)
+  runs `composer lint` (phpcs / PSR-12) + `composer analyse` (PHPStan level 8) + `composer test`
+  (PHPUnit 13) on the backend, and `npm run build` (vue-tsc + Vite) + `npm run test` (Vitest) on the
+  frontend, with coverage reported (no hard gate). It also **fails if the committed contract is stale**:
+  `composer docs` + `git diff --exit-code openapi.json` (backend) and `npm run gen:types` +
+  `git diff --exit-code src/types/api.generated.ts` (frontend). Backend tests build a fresh in-memory SQLite DB from
   `backend/tests/Support/schema.sql` and pass it to Storage/Collection constructors (the app
   uses **constructor DI** — the PHP-DI container in `api/dependencies.php` supplies `PDO` and
   autowires the graph). If you change a migration, regenerate `schema.sql` (see CONTRIBUTING.md).
@@ -397,19 +418,23 @@ which is fine given the token's entropy.
 ## 11. How to add things (quick recipes)
 
 **A new API endpoint**
-1. Add SQL to the relevant `*Storage` class (prepared statements only).
-2. Expose it via the matching `*Collection` method.
-3. Add a controller action; validate input, return via `success()`/`error()`.
-4. Register the route in `api/index.php` in the correct group (mind auth + caching).
+1. Add SQL to the relevant `*Repository`/`*Storage` class (prepared statements only).
+2. Expose it via the matching repository/collection method.
+3. Add a controller action; validate input, return via `success()`/`created()`/`noContent()`/`error()`
+   with the right status code, and **annotate it with `#[OA\Get/Post/…]`** (+ any new response schema
+   under `Structure/Api/`).
+4. Register the route in `api/index.php` in the correct group (mind auth + caching); public writes
+   go on the `(method, path)` allowlist in `$authMiddleware`.
 5. If it's a cached GET, use `cachedSuccess`; if it's a mutation, call `invalidateCache`.
+6. Run `composer docs` (backend) and `npm run gen:types` (frontend); commit both regenerated files.
 
 **A new media field**
-Update: a **migration**, the `Media` structure (+getter/setter),
-`MediaStorage` (`store`/`retrieve*` column lists), and the frontend `MediaItem` interface in
-`stores/gallery.ts`.
+Update: a **migration**, the `Media` structure (+setter + `#[OA\Property]`),
+`MediaStorage` (`store`/`retrieve*` column lists), then regenerate the spec + types
+(`composer docs`, `npm run gen:types`) so the frontend `Media` type picks it up.
 
 **A new tag-category color**
-Add to `TagController::VALID_COLORS` (backend) **and** `VALID_COLORS` in
+Add to `TagCategoryController::VALID_COLORS` (backend) **and** `VALID_COLORS` in
 `constants/categories.ts` (frontend) **and** define the CSS in `frontend/src/style.css`.
 
 **A new frontend page**
@@ -420,12 +445,15 @@ Create a view in `views/`, add a lazy route with `meta.title` in `router/index.t
 
 ## 12. Conventions checklist for any change
 
-- [ ] SQL only in `Storage`; bound parameters always.
-- [ ] Controllers return `success()`/`error()` with a PascalCase error code + human message.
+- [ ] SQL only in `Repository`/`Storage`; bound parameters always.
+- [ ] Controllers return the right status code (`200`/`201`/`204`) via `success()`/`created()`/
+      `noContent()`, or `error()` with a PascalCase code + human message.
+- [ ] Endpoints/schemas are `#[OA\*]`-annotated; `composer docs` + `npm run gen:types` re-run and
+      the regenerated `openapi.json` / `api.generated.ts` committed (CI enforces).
 - [ ] Mutations invalidate the right cache group(s).
-- [ ] New state-changing routes are in an auth-protected group (or you consciously decided otherwise).
+- [ ] New state-changing routes are in an auth-protected group (or added to the public allowlist consciously).
 - [ ] Schema changes land in a **Phinx migration** (never hand-edited into `db/setup.php`).
-- [ ] Frontend: typed, `<script setup>`, API via `useApi`, no direct `fetch`.
+- [ ] Frontend: typed (import from `types/`), `<script setup>`, API via `useApi` + `api/endpoints.ts`, no direct `fetch`.
 - [ ] Bump `sw.js` `CACHE_VERSION` if caching/asset behavior changed.
-- [ ] Keep frontend/backend mirror lists (colors, extensions, `MediaItem` shape) in sync.
+- [ ] Keep frontend/backend mirror lists (colors, extensions) in sync.
 ```

@@ -3,21 +3,10 @@ import { ref, onMounted } from 'vue'
 import { useApi, hasAuthToken } from '../composables/useApi'
 import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
+import { endpoints } from '../api/endpoints'
+import type { CategoryMapping, TagMapping } from '../types'
 import { colorToTagClass } from '../constants/categories'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
-
-interface CategoryMapping {
-  danbooru_category_id: number
-  danbooru_category_name: string
-  gallery_category_id: number
-  gallery_category_name: string | null
-}
-
-interface TagMapping {
-  id: number
-  danbooru_tag: string
-  gallery_tag: string
-}
 
 const api = useApi()
 const store = useGalleryStore()
@@ -48,13 +37,19 @@ const tagHelp = ref('')
 const tagHelpClass = ref('')
 const tagLoading = ref(false)
 
+async function loadCategoryMappings() {
+  categoryMappings.value = await api.get<CategoryMapping[]>(endpoints.danbooru.categoryMappings)
+}
+
+async function loadTagMappings() {
+  tagMappings.value = await api.get<TagMapping[]>(endpoints.danbooru.tagMappings)
+}
+
 async function loadRules() {
   loading.value = true
   loadFailed.value = false
   try {
-    const data = await api.get<{ category_mappings: CategoryMapping[], tag_mappings: TagMapping[] }>('/danbooru/rules/')
-    categoryMappings.value = data.category_mappings
-    tagMappings.value = data.tag_mappings
+    await Promise.all([loadCategoryMappings(), loadTagMappings()])
   } catch (e: any) {
     toastStore.error(e.message || 'Failed to load Danbooru rules.')
     loadFailed.value = true
@@ -94,11 +89,12 @@ async function submitCatMapping() {
 
   catLoading.value = true
   try {
-    categoryMappings.value = await api.post<CategoryMapping[]>('/danbooru/category-map/add/', {
+    await api.post<CategoryMapping>(endpoints.danbooru.categoryMappings, {
       danbooru_category_id: dcid,
       danbooru_category_name: catDanbooruName.value.trim(),
       gallery_category_id: Number(catGalleryCategoryId.value),
     })
+    await loadCategoryMappings()
     showCatModal.value = false
     toastStore.success('Category mapping saved.')
   } catch (e: any) {
@@ -112,9 +108,8 @@ async function submitCatMapping() {
 async function deleteCatMapping(danbooruCategoryId: number) {
   if (!confirm('Remove this category mapping?')) return
   try {
-    categoryMappings.value = await api.del<CategoryMapping[]>('/danbooru/category-map/delete/', {
-      danbooru_category_id: danbooruCategoryId,
-    })
+    await api.del(endpoints.danbooru.categoryMapping(danbooruCategoryId))
+    await loadCategoryMappings()
     toastStore.success('Category mapping removed.')
   } catch (e: any) {
     toastStore.error(e.message || 'Could not remove mapping.')
@@ -158,16 +153,17 @@ async function submitTagMapping() {
   tagLoading.value = true
   try {
     if (tagFormMode.value === 'edit') {
-      tagMappings.value = await api.put<TagMapping[]>(`/danbooru/tag-map/edit/${tagFormId.value}/`, {
+      await api.put<TagMapping>(endpoints.danbooru.tagMapping(tagFormId.value), {
         danbooru_tag: tagDanbooru.value.trim(),
         gallery_tag: tagGallery.value.trim(),
       })
     } else {
-      tagMappings.value = await api.post<TagMapping[]>('/danbooru/tag-map/add/', {
+      await api.post<TagMapping>(endpoints.danbooru.tagMappings, {
         danbooru_tag: tagDanbooru.value.trim(),
         gallery_tag: tagGallery.value.trim(),
       })
     }
+    await loadTagMappings()
     showTagModal.value = false
     toastStore.success(tagFormMode.value === 'edit' ? 'Tag mapping updated.' : 'Tag mapping added.')
   } catch (e: any) {
@@ -181,7 +177,8 @@ async function submitTagMapping() {
 async function deleteTagMapping(id: number) {
   if (!confirm('Remove this tag name mapping?')) return
   try {
-    tagMappings.value = await api.del<TagMapping[]>('/danbooru/tag-map/delete/', { id })
+    await api.del(endpoints.danbooru.tagMapping(id))
+    await loadTagMappings()
     toastStore.success('Tag mapping removed.')
   } catch (e: any) {
     toastStore.error(e.message || 'Could not remove mapping.')

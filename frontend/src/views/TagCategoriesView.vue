@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
 import { useApi, hasAuthToken } from '../composables/useApi'
-import { useGalleryStore, type TagCategory } from '../stores/gallery'
+import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
+import { endpoints } from '../api/endpoints'
+import type { TagCategory } from '../types'
 import { colorToTagClass, VALID_COLORS } from '../constants/categories'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 
@@ -37,7 +39,7 @@ async function loadCategories() {
   loading.value = true
   loadFailed.value = false
   try {
-    categories.value = await api.get<TagCategory[]>('/tags/categories/')
+    categories.value = await api.get<TagCategory[]>(endpoints.tagCategories.list)
   } catch (e: any) {
     toastStore.error(e.message || 'Failed to load categories.')
     loadFailed.value = true
@@ -101,10 +103,11 @@ async function submitForm() {
     }
 
     if (formMode.value === 'edit') {
-      categories.value = await api.put<TagCategory[]>(`/tags/categories/edit/${formId.value}/`, payload)
+      await api.put<TagCategory>(endpoints.tagCategories.byId(formId.value), payload)
     } else {
-      categories.value = await api.post<TagCategory[]>('/tags/categories/add/', payload)
+      await api.post<TagCategory>(endpoints.tagCategories.list, payload)
     }
+    await loadCategories()
     closeModal()
     store.refreshTags()
     toastStore.success(formMode.value === 'edit' ? 'Category updated.' : 'Category created.')
@@ -125,9 +128,8 @@ async function confirmDelete() {
   if (!deleteTarget.value) return
   deleteLoading.value = true
   try {
-    categories.value = await api.del<TagCategory[]>('/tags/categories/delete/', {
-      category_id: deleteTarget.value.category_id
-    })
+    await api.del(endpoints.tagCategories.byId(deleteTarget.value.category_id))
+    await loadCategories()
     showDeleteModal.value = false
     store.refreshTags()
     toastStore.success('Category deleted.')
