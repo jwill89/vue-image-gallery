@@ -2,6 +2,8 @@
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi, setAuthToken, hasAuthToken } from '../composables/useApi'
+import { endpoints } from '../api/endpoints'
+import type { LoginResponse } from '../types'
 
 const router = useRouter()
 const api = useApi()
@@ -17,7 +19,7 @@ async function login() {
   authLoading.value = true
   authError.value = null
   try {
-    const result = await api.post<{ token: string }>('/auth/login/', { password: passwordInput.value })
+    const result = await api.post<LoginResponse>(endpoints.auth.login, { password: passwordInput.value })
     setAuthToken(result.token)
     passwordInput.value = ''
     router.replace('/')

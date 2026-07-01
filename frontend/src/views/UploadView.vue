@@ -3,6 +3,8 @@ import { ref, computed } from 'vue'
 import { useApi, hasAuthToken, setAuthToken } from '../composables/useApi'
 import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
+import { endpoints } from '../api/endpoints'
+import type { LoginResponse } from '../types'
 
 const api = useApi()
 const store = useGalleryStore()
@@ -49,7 +51,7 @@ async function login() {
   authLoading.value = true
   authError.value = null
   try {
-    const result = await api.post<{ token: string }>('/auth/login/', { password: passwordInput.value })
+    const result = await api.post<LoginResponse>(endpoints.auth.login, { password: passwordInput.value })
     setAuthToken(result.token)
     authenticated.value = true
     passwordInput.value = ''
@@ -211,7 +213,7 @@ async function uploadFiles() {
       total_duplicates: number
       total_failed: number
       total_tags_applied?: number
-    }>('/upload/media/', formData)
+    }>(endpoints.media.upload, formData)
 
     uploadResults.value = result.results
 

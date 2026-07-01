@@ -2,6 +2,8 @@
 
 namespace Gallery\Structure;
 
+use OpenApi\Attributes as OA;
+
 /**
  * Media class
  * Unified structure representing any media item (image or video) in the gallery.
@@ -10,17 +12,28 @@ namespace Gallery\Structure;
  * (e.g. $media->file_name), writes go through the fluent setters. private(set)
  * lets PDO's FETCH_CLASS hydrate rows while blocking external mutation.
  */
+#[OA\Schema(schema: 'Media', description: 'A media item (image or video).')]
 class Media extends AbstractStructure
 {
+    #[OA\Property(type: 'integer')]
     public private(set) int $media_id = 0;
+    #[OA\Property(type: 'string', enum: ['image', 'video'])]
     public private(set) string $media_type = 'image'; // 'image' or 'video'
+    #[OA\Property(type: 'string')]
     public private(set) string $file_name = '';
+    #[OA\Property(type: 'integer', description: 'Unix timestamp the file was ingested.')]
     public private(set) int $file_time = 0;
+    #[OA\Property(type: 'string', description: 'MD5 hash of the file contents.')]
     public private(set) string $hash = '';
+    #[OA\Property(type: 'string', description: 'Perceptual fingerprint (images only).')]
     public private(set) string $bits_fingerprint = '';
+    #[OA\Property(type: 'integer')]
     public private(set) int $width = 0;
+    #[OA\Property(type: 'integer')]
     public private(set) int $height = 0;
+    #[OA\Property(type: 'number', format: 'float', description: 'Duration in seconds; 0 for still images.')]
     public private(set) float $duration = 0.0;   // seconds; 0 for still images
+    #[OA\Property(type: 'integer', description: 'File size in bytes.')]
     public private(set) int $file_size = 0;      // bytes
 
     public function setMediaId(int $media_id): self

@@ -6,6 +6,8 @@ import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
 import { useApi, hasAuthToken } from '../composables/useApi'
 import { useFavoritesStore } from '../stores/favorites'
+import { endpoints } from '../api/endpoints'
+import type { DanbooruFetchResult } from '../types'
 import TagMultiSelect from '../components/TagMultiSelect.vue'
 import TagBadge from '../components/TagBadge.vue'
 import TagShortcodeModal from '../components/TagShortcodeModal.vue'
@@ -151,7 +153,7 @@ function navigateNext() {
 async function deleteMedia() {
   deleting.value = true
   try {
-    await api.del(`/media/${props.mediaId}/`)
+    await api.del(endpoints.media.byId(props.mediaId))
     toastStore.success('Media deleted successfully.')
     showDeleteModal.value = false
 
@@ -193,7 +195,7 @@ async function fetchDanbooruTags() {
   danbooruError.value = ''
 
   try {
-    const payload: Record<string, number> = { media_id: props.mediaId }
+    const payload: Record<string, number> = {}
     if (danbooruMode.value === 'post_id') {
       const id = parseInt(danbooruPostId.value.trim(), 10)
       if (!id || id <= 0) {
@@ -204,13 +206,7 @@ async function fetchDanbooruTags() {
       payload.danbooru_post_id = id
     }
 
-    const data = await api.post<{
-      tags: typeof tags.value
-      all_tags: typeof store.allTags
-      method: string
-      tags_applied: number
-      tags_created: number
-    }>('/tags/danbooru-fetch/', payload)
+    const data = await api.post<DanbooruFetchResult>(endpoints.media.danbooruTags(props.mediaId), payload)
 
     tags.value = data.tags ?? []
     store.allTags = data.all_tags ?? store.allTags

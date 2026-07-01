@@ -2,20 +2,15 @@
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi, hasAuthToken } from '../composables/useApi'
-import { useGalleryStore, type Tag } from '../stores/gallery'
+import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
+import { endpoints } from '../api/endpoints'
+import type { TagListItem } from '../types'
 import {
   getTextClassByName,
   getCategoryClassByName
 } from '../constants/categories'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
-
-
-interface DisplayTag extends Tag {
-  category_name: string
-  media_count: number
-  implication_count: number
-}
 
 const api = useApi()
 const store = useGalleryStore()
@@ -24,7 +19,7 @@ const router = useRouter()
 
 const authenticated = ref(hasAuthToken())
 
-const allDisplayTags = ref<DisplayTag[]>([])
+const allDisplayTags = ref<TagListItem[]>([])
 const loading = ref(false)
 const searchQuery = ref('')
 const sortKey = ref<'tag_name' | 'category_name' | 'media_count'>('tag_name')
@@ -43,7 +38,7 @@ const formHelpClass = ref('')
 
 // Migrate modal state
 const showMigrateModal = ref(false)
-const migrateSourceTag = ref<DisplayTag | null>(null)
+const migrateSourceTag = ref<TagListItem | null>(null)
 const migrateTargetSearch = ref('')
 const migrateTargetId = ref<number | null>(null)
 const migrateHelp = ref('')
@@ -52,7 +47,7 @@ const migrateLoading = ref(false)
 
 // Delete modal state
 const showDeleteModal = ref(false)
-const deleteTargetTag = ref<DisplayTag | null>(null)
+const deleteTargetTag = ref<TagListItem | null>(null)
 const deleteMigrateFirst = ref(false)
 const deleteMigrateTargetSearch = ref('')
 const deleteMigrateTargetId = ref<number | null>(null)
@@ -81,7 +76,7 @@ const filteredTags = computed(() => {
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.toLowerCase()
     filtered = filtered.filter(t =>
-      t.tag_name.toLowerCase().includes(q) || t.category_name.toLowerCase().includes(q)
+      t.tag_name.toLowerCase().includes(q) || (t.category_name ?? '').toLowerCase().includes(q)
     )
   }
   const key = sortKey.value
@@ -129,7 +124,7 @@ async function loadTags(showSpinner = true) {
   if (showSpinner) loading.value = true
   loadFailed.value = false
   try {
-    allDisplayTags.value = await api.get<DisplayTag[]>('/tags/display/')
+    allDisplayTags.value = await api.get<TagListItem[]>(endpoints.tags.display)
   } catch (e: any) {
     toastStore.error(e.message || 'Failed to load tags')
     loadFailed.value = true
@@ -144,7 +139,7 @@ function openNewTagModal() {
   showFormModal.value = true
 }
 
-function editTag(tag: DisplayTag) {
+function editTag(tag: TagListItem) {
   formMode.value = 'edit'
   formEditId.value = tag.tag_id
   formTagName.value = tag.tag_name
@@ -186,7 +181,7 @@ async function submitForm() {
 
   try {
     if (formMode.value === 'edit' && formEditId.value !== null) {
-      await api.put(`/tags/edit/${formEditId.value}/`, {
+      await api.put(endpoints.tags.byId(formEditId.value), {
         tag_name: formTagName.value,
         category_id: Number(formCategoryId.value)
       })
@@ -200,7 +195,7 @@ async function submitForm() {
         formHelpClass.value = 'is-danger'
         return
       }
-      await api.post('/tags/add/', {
+      await api.post(endpoints.tags.create, {
         tag_name: formTagName.value,
         category_id: Number(formCategoryId.value)
       })
@@ -247,7 +242,7 @@ function onTagNameInput() {
 // Debounce timer handle
 let tagNameDebounceTimer: number = 0
 
-function openMigrateModal(tag: DisplayTag) {
+function openMigrateModal(tag: TagListItem) {
   migrateSourceTag.value = tag
   migrateTargetSearch.value = ''
   migrateTargetId.value = null
@@ -261,7 +256,7 @@ function closeMigrateModal() {
   migrateSourceTag.value = null
 }
 
-function selectMigrateTarget(tag: DisplayTag) {
+function selectMigrateTarget(tag: TagListItem) {
   migrateTargetId.value = tag.tag_id
   migrateTargetSearch.value = tag.tag_name
 }
@@ -275,8 +270,7 @@ async function submitMigrate() {
 
   migrateLoading.value = true
   try {
-    await api.post('/tags/migrate/', {
-      source_tag_id: migrateSourceTag.value.tag_id,
+    await api.post(endpoints.tags.migrate(migrateSourceTag.value.tag_id), {
       target_tag_id: migrateTargetId.value
     })
     closeMigrateModal()
@@ -290,7 +284,7 @@ async function submitMigrate() {
   }
 }
 
-function openDeleteModal(tag: DisplayTag) {
+function openDeleteModal(tag: TagListItem) {
   deleteTargetTag.value = tag
   deleteMigrateFirst.value = false
   deleteMigrateTargetSearch.value = ''
@@ -305,7 +299,7 @@ function closeDeleteModal() {
   deleteTargetTag.value = null
 }
 
-function selectDeleteMigrateTarget(tag: DisplayTag) {
+function selectDeleteMigrateTarget(tag: TagListItem) {
   deleteMigrateTargetId.value = tag.tag_id
   deleteMigrateTargetSearch.value = tag.tag_name
 }
@@ -321,10 +315,12 @@ async function submitDelete() {
 
   deleteLoading.value = true
   try {
-    await api.del('/tags/delete/', {
-      tag_id: deleteTargetTag.value.tag_id,
-      migrate_to_tag_id: deleteMigrateFirst.value ? deleteMigrateTargetId.value : 0
-    })
+    const migrateToId = deleteMigrateFirst.value ? deleteMigrateTargetId.value : 0
+    await api.del(
+      migrateToId
+        ? endpoints.tags.deleteMigrateTo(deleteTargetTag.value.tag_id, migrateToId)
+        : endpoints.tags.byId(deleteTargetTag.value.tag_id)
+    )
     closeDeleteModal()
     await loadTags(false)
     store.refreshTags()

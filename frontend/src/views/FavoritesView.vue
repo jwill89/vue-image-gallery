@@ -3,8 +3,10 @@ import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useApi } from '../composables/useApi'
 import { useFavoritesStore } from '../stores/favorites'
-import { useGalleryStore, type MediaItem } from '../stores/gallery'
+import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
+import { endpoints } from '../api/endpoints'
+import type { MediaItem } from '../types'
 import GalleryCard from '../components/GalleryCard.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 
@@ -31,7 +33,7 @@ async function loadFavorites() {
   loadFailed.value = false
 
   try {
-    const result = await api.post<MediaItem[]>('/media/by-ids/', { ids })
+    const result = await api.post<MediaItem[]>(endpoints.media.byIds, { ids })
     items.value = result ?? []
 
     // Prune favorites that no longer exist in the database

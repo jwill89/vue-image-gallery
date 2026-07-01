@@ -66,6 +66,28 @@ abstract class AbstractController
     }
 
     /**
+     * Return a `201 Created` response carrying the newly-created resource.
+     *
+     * @param Response $response The response object.
+     * @param mixed    $data     The created resource to serialize.
+     */
+    protected function created(Response $response, mixed $data): Response
+    {
+        return $response->withJson($data, 201);
+    }
+
+    /**
+     * Return a `204 No Content` response with an empty body (for successful
+     * deletes and other mutations that have nothing meaningful to return).
+     *
+     * @param Response $response The response object.
+     */
+    protected function noContent(Response $response): Response
+    {
+        return $response->withStatus(204);
+    }
+
+    /**
      * Return an error JSON response with a machine-readable code and human-readable message.
      *
      * @param Response $response The response object.

@@ -55,8 +55,16 @@ composer lint           # phpcs: must report 0 errors (line-length warnings are 
 composer lint:fix       # phpcbf: auto-fix most violations
 ```
 
-Keep SQL in the `Storage` layer, return responses via `success()` / `error()`, and
-follow the `Controller → Collection → Storage` flow described in AGENTS.md.
+Keep SQL in the `Repository`/`Storage` layer, return responses via the
+`AbstractController` helpers (`success()` / `created()` / `noContent()` / `error()`),
+and follow the layered flow described in AGENTS.md. **Annotate every new/changed
+endpoint** with `#[OA\...]` attributes (and structure classes with `#[OA\Schema]`),
+then regenerate the committed spec:
+
+```bash
+cd backend
+composer docs           # regenerate backend/openapi.json — CI fails if it drifts
+```
 
 **Frontend — TypeScript + Vue 3** (`<script setup lang="ts">`, Composition API only):
 
@@ -65,8 +73,17 @@ cd frontend
 npm run build           # vue-tsc type-check + vite build; must succeed with no type errors
 ```
 
-Route API calls through `composables/useApi.ts` (never raw `fetch`), and keep the
-frontend/backend mirror lists (tag colors, `MediaItem` shape) in sync.
+Route API calls through `composables/useApi.ts` (never raw `fetch`) using the paths in
+`src/api/endpoints.ts`. Domain types are **generated from the OpenAPI spec** — after a
+backend contract change, regenerate them and commit the result (CI checks it's current):
+
+```bash
+cd frontend
+npm run gen:types       # → src/types/api.generated.ts (openapi-typescript)
+```
+
+Import types from `src/types` (friendly aliases over the generated file), not the
+generated module directly.
 
 ## Tests
 
@@ -113,6 +130,8 @@ php vendor/bin/phinx migrate
 
 1. Branch off `master`.
 2. Make your change; run the lint, test, and build checks above until they pass.
+   If you touched the API, run `composer docs` + `npm run gen:types` and commit the
+   regenerated `backend/openapi.json` and `frontend/src/types/api.generated.ts`.
 3. Add a bullet under the **`## [Unreleased]`** heading in
    [CHANGELOG.md](CHANGELOG.md), in the right group (Added / Changed / Fixed /
    Removed / Security). We follow [Keep a Changelog](https://keepachangelog.com/)
@@ -131,5 +150,7 @@ php vendor/bin/phinx migrate
 
 1. Move the `## [Unreleased]` entries under a new `## [x.y.z] - YYYY-MM-DD` heading
    and update the compare links at the bottom of `CHANGELOG.md`.
-2. Bump `version` in `frontend/package.json`.
+2. Bump the version in **`frontend/package.json`**, **`backend/composer.json`**, and
+   `Gallery\Core\Configuration::VERSION` (the footer and `GET /api/version` read these),
+   then run `composer docs` so the spec's `info.version` matches.
 3. Tag the release `vX.Y.Z` and deploy with `scripts/deploy.ps1`.

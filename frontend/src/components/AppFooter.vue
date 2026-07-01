@@ -2,6 +2,7 @@
 import { useGalleryStore } from '../stores/gallery'
 
 const store = useGalleryStore()
+const version = __APP_VERSION__
 </script>
 
 <template>
@@ -16,6 +17,9 @@ const store = useGalleryStore()
         <a href="https://opensource.org/licenses/mit-license.php" target="_blank">MIT</a> license.<br />
         All images &copy; their respective creators.<br />
         All characters in images &copy; their respective owners.
+      </p>
+      <p class="is-size-7 has-text-grey">
+        Gallery <a href="/api/docs" target="_blank" rel="noopener">v{{ version }}</a>
       </p>
       <div class="level">
         <div class="level-item has-text-centered">

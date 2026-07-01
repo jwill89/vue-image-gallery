@@ -13,16 +13,20 @@ use Psr\Http\Message\ServerRequestInterface;
 use Psr\Http\Server\RequestHandlerInterface;
 use Slim\Factory\AppFactory;
 use Slim\Routing\RouteCollectorProxy;
+use Routes\Internal\AuthController;
 use Routes\Internal\DanbooruController;
 use Routes\Internal\DuplicatesController;
 use Routes\Internal\MediaController;
+use Routes\Internal\SystemController;
+use Routes\Internal\TagCategoryController;
 use Routes\Internal\TagController;
+use Routes\Internal\TagImplicationController;
 use Routes\Internal\UploadController;
 use Gallery\Core\Configuration;
 use Gallery\Core\Logger;
 use Gallery\Core\RateLimiter;
 
-// Create Container using PHP-DI. Autowiring builds the Storage -> Collection ->
+// Create Container using PHP-DI. Autowiring builds the Repository/Collection ->
 // Controller graph; dependencies.php supplies the one thing it can't infer (PDO).
 $builder = new ContainerBuilder();
 $builder->addDefinitions(__DIR__ . '/dependencies.php');
@@ -83,35 +87,33 @@ function unauthorizedResponse(): ResponseInterface
 // ============================================================
 // Auth Middleware for State-Changing Operations
 // ============================================================
+// All GETs are public. State-changing methods (POST/PUT/PATCH/DELETE) require a
+// bearer token, except an intentionally-public allowlist matched by (method, path
+// pattern): media tagging (anyone may tag) and the batched POST /media/by-ids read.
 $authMiddleware = function (ServerRequestInterface $request, RequestHandlerInterface $handler): ResponseInterface {
     $method = strtoupper($request->getMethod());
-    $path = $request->getUri()->getPath();
 
-    // Skip auth for login endpoint and OPTIONS preflight
-    if ($method === 'OPTIONS' || str_ends_with($path, '/auth/login') || str_ends_with($path, '/auth/login/')) {
+    if (!in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
         return $handler->handle($request);
     }
 
-    // Only require auth for state-changing methods
-    if (in_array($method, ['POST', 'PUT', 'PATCH', 'DELETE'], true)) {
-        // Allowlist of state-changing-method routes that are intentionally public:
-        //  - tag add/remove on media items (anyone may tag)
-        //  - /media/by-ids is a read that uses POST only to carry a large id list
-        // Match the route suffix exactly (ignoring a trailing slash) rather than
-        // a loose substring, so unrelated paths can't slip through.
-        $normalizedPath = rtrim($path, '/');
-        $publicPaths = ['/tags/media/add', '/tags/media/remove', '/media/by-ids'];
-        $isPublicOp = false;
-        foreach ($publicPaths as $p) {
-            if (str_ends_with($normalizedPath, $p)) {
-                $isPublicOp = true;
-                break;
-            }
+    // Public state-changing routes, matched precisely by method + path pattern so
+    // that (e.g.) DELETE /media/{id}/tags/{tagId} stays public while DELETE
+    // /media/{id} still requires a token.
+    $path = rtrim($request->getUri()->getPath(), '/');
+    $publicWrites = [
+        ['POST', '#/media/by-ids$#'],
+        ['PATCH', '#/media/\d+/tags$#'],
+        ['DELETE', '#/media/\d+/tags/\d+$#'],
+    ];
+    foreach ($publicWrites as [$verb, $pattern]) {
+        if ($method === $verb && preg_match($pattern, $path) === 1) {
+            return $handler->handle($request);
         }
+    }
 
-        if (!$isPublicOp && !verifyAuthToken($request->getHeaderLine('Authorization'))) {
-            return unauthorizedResponse();
-        }
+    if (!verifyAuthToken($request->getHeaderLine('Authorization'))) {
+        return unauthorizedResponse();
     }
 
     return $handler->handle($request);
@@ -216,135 +218,95 @@ $app->options('/{routes:.+}', function (ServerRequestInterface $request, Respons
 });
 
 // ============================================================
-// Media Controllers (unified images + videos)
+// System (version + API docs) — all public reads
+// ============================================================
+$app->get('/version[/]', SystemController::class . ':getVersion');
+$app->get('/openapi.json', SystemController::class . ':getOpenApiSpec');
+$app->get('/docs[/]', SystemController::class . ':getDocs');
+
+// ============================================================
+// Authentication
+// ============================================================
+$app->post('/auth/login[/]', AuthController::class . ':login');
+
+// ============================================================
+// Media (unified images + videos) + media-scoped tagging
 // ============================================================
 $app->group('/media', function (RouteCollectorProxy $group) {
+    // Listing/search + RPC reads (static segments before the {media_id} placeholder)
+    $group->get('/page/{page}[/{per_page}[/]]', MediaController::class . ':getItemsForPage');
+    $group->get('/untagged/{page}[/{per_page}[/]]', MediaController::class . ':getUntaggedItems');
+    $group->get('/with-tags/{tag_list}/{page}[/{per_page}[/]]', MediaController::class . ':getItemsWithTags');
     $group->get('/random[/]', MediaController::class . ':getRandomItem');
+    $group->get('/count[/]', MediaController::class . ':getCount');
     $group->post('/by-ids[/]', MediaController::class . ':getItemsByIds');
-    $group->get('/untagged/{page}[/[{items_per_page}[/]]]', MediaController::class . ':getUntaggedItems');
-    $group->get('/page/{page}[/[{items_per_page}[/]]]', MediaController::class . ':getItemsForPage');
-    $group->get('/with-tags/{tag_list}/{page}[/[{items_per_page}[/]]]', MediaController::class . ':getItemsWithTags');
-    $group->get('/total[/]', MediaController::class . ':getTotal');
+    $group->post('/bulk-delete[/]', MediaController::class . ':bulkDelete');
+    // Upload = create a media resource
+    $group->post('[/]', UploadController::class . ':create');
+    // Single item
+    $group->get('/{media_id}[/]', MediaController::class . ':getItem');
     $group->delete('/{media_id}[/]', MediaController::class . ':deleteItem');
-    $group->get('/[{media_id}[/]]', MediaController::class . ':getItem');
+    // Media-scoped tags
+    $group->get('/{media_id}/tags[/]', MediaController::class . ':getMediaTags');
+    $group->patch('/{media_id}/tags[/]', MediaController::class . ':addMediaTags');
+    $group->delete('/{media_id}/tags/{tag_id}[/]', MediaController::class . ':removeMediaTag');
+    // Danbooru tag import for a single media item
+    $group->post('/{media_id}/danbooru-tags[/]', MediaController::class . ':fetchDanbooruTags');
 })->add($authMiddleware);
 
 // ============================================================
-// Tag Controllers
+// Tags
 // ============================================================
 $app->group('/tags', function (RouteCollectorProxy $group) {
-    $group->get('/all[/]', TagController::class . ':getAllTags');
+    $group->get('[/]', TagController::class . ':getAllTags');
     $group->get('/display[/]', TagController::class . ':getTagListForDisplay');
-    $group->get('/tag/{tag_id}[/]', TagController::class . ':getTag');
-    $group->get('/for/media/{media_id}[/]', TagController::class . ':getTagsForMedia');
-    // Protected: state-changing tag operations
-    $group->post('/add[/]', TagController::class . ':addTag');
-    $group->put('/edit/{tag_id}[/]', TagController::class . ':editTag');
-    $group->patch('/media/add[/]', TagController::class . ':addTagsToMedia');
-    $group->patch('/media/remove[/]', TagController::class . ':removeTagFromMedia');
-    $group->post('/migrate[/]', TagController::class . ':migrateTag');
-    $group->delete('/delete[/]', TagController::class . ':deleteTag');
-    // Tag implications
-    $group->get('/implications[/]', TagController::class . ':getImplications');
-    $group->post('/implications/add[/]', TagController::class . ':addImplication');
-    $group->delete('/implications/remove[/]', TagController::class . ':removeImplication');
-    // Danbooru tag fetch for a single media item
-    $group->post('/danbooru-fetch[/]', TagController::class . ':fetchDanbooruTags');
-    // Tag categories
-    $group->get('/categories[/]', TagController::class . ':getCategories');
-    $group->post('/categories/add[/]', TagController::class . ':addCategory');
-    $group->put('/categories/edit/{category_id}[/]', TagController::class . ':editCategory');
-    $group->delete('/categories/delete[/]', TagController::class . ':deleteCategory');
+    $group->get('/{tag_id}[/]', TagController::class . ':getTag');
+    $group->post('[/]', TagController::class . ':addTag');
+    $group->put('/{tag_id}[/]', TagController::class . ':editTag');
+    $group->delete('/{tag_id}[/]', TagController::class . ':deleteTag');
+    $group->delete('/{tag_id}/migrate-to/{target_tag_id}[/]', TagController::class . ':deleteTag');
+    $group->post('/{tag_id}/migrate[/]', TagController::class . ':migrateTag');
 })->add($authMiddleware);
 
 // ============================================================
-// Authentication Endpoint
+// Tag Categories
 // ============================================================
-$app->post('/auth/login[/]', function (ServerRequestInterface $request, ResponseInterface $response) {
-    $ip = $request->getServerParams()['REMOTE_ADDR'] ?? 'unknown';
-
-    // Stricter throttle for login attempts specifically, in its own bucket
-    // (separate from the global per-IP limiter) to slow password brute-forcing.
-    $loginLimiter = new RateLimiter(\Gallery\Core\DatabaseConnection::getInstance(), 10, 300); // 10 attempts per 5 minutes
-    $loginCheck = $loginLimiter->check('login:' . $ip);
-    if (!$loginCheck['allowed']) {
-        Logger::getInstance()->warning('Login rate limit exceeded', ['ip' => $ip]);
-        $response->getBody()->write((string) json_encode([
-            'error' => 'TooManyAttempts',
-            'message' => 'Too many login attempts. Please wait a few minutes and try again.',
-            'retry_after' => $loginCheck['retry_after'],
-        ]));
-        return $response
-            ->withHeader('Content-Type', 'application/json')
-            ->withHeader('Retry-After', (string) $loginCheck['retry_after'])
-            ->withStatus(429);
-    }
-
-    // Refuse logins entirely if no admin password is configured, so the
-    // 'changeme' development default can never grant access in production.
-    if (!Configuration::isAdminConfigured()) {
-        Logger::getInstance()->error('Login attempted but GALLERY_ADMIN_PASSWORD is not configured', ['ip' => $ip]);
-        $response->getBody()->write((string) json_encode([
-            'error' => 'AdminNotConfigured',
-            'message' => 'Admin access is not configured on the server.',
-        ]));
-        return $response->withHeader('Content-Type', 'application/json')->withStatus(503);
-    }
-
-    $params = json_decode((string)$request->getBody(), true) ?? [];
-    $password = $params['password'] ?? '';
-
-    if (is_string($password) && hash_equals(Configuration::getAdminPassword(), $password)) {
-        $token = bin2hex(random_bytes(32));
-        $db = \Gallery\Core\DatabaseConnection::getInstance();
-
-        $db->exec('DELETE FROM auth_tokens WHERE created_at < ' . (time() - 86400));
-
-        $stmt = $db->prepare('INSERT INTO auth_tokens (token, created_at) VALUES (:token, :time)');
-        $stmt->execute([':token' => $token, ':time' => time()]);
-
-        Logger::getInstance()->info('Admin login successful', ['ip' => $ip]);
-        $response->getBody()->write((string) json_encode(['token' => $token]));
-        return $response->withHeader('Content-Type', 'application/json')->withStatus(200);
-    }
-
-    Logger::getInstance()->warning('Admin login failed', ['ip' => $ip]);
-    $response->getBody()->write((string) json_encode([
-        'error' => 'InvalidPassword',
-        'message' => 'The password is incorrect.',
-    ]));
-    return $response->withHeader('Content-Type', 'application/json')->withStatus(401);
-});
+$app->group('/tag-categories', function (RouteCollectorProxy $group) {
+    $group->get('[/]', TagCategoryController::class . ':getCategories');
+    $group->post('[/]', TagCategoryController::class . ':addCategory');
+    $group->put('/{category_id}[/]', TagCategoryController::class . ':editCategory');
+    $group->delete('/{category_id}[/]', TagCategoryController::class . ':deleteCategory');
+})->add($authMiddleware);
 
 // ============================================================
-// Danbooru Import Rules (protected by auth middleware)
+// Tag Implications
+// ============================================================
+$app->group('/tag-implications', function (RouteCollectorProxy $group) {
+    $group->get('[/]', TagImplicationController::class . ':getImplications');
+    $group->post('[/]', TagImplicationController::class . ':addImplication');
+    $group->delete('/{tag_id}/{implied_tag_id}[/]', TagImplicationController::class . ':removeImplication');
+})->add($authMiddleware);
+
+// ============================================================
+// Danbooru Import Rules
 // ============================================================
 $app->group('/danbooru', function (RouteCollectorProxy $group) {
-    $group->get('/rules[/]', DanbooruController::class . ':getRules');
-    // Category mappings
-    $group->post('/category-map/add[/]', DanbooruController::class . ':addCategoryMapping');
-    $group->delete('/category-map/delete[/]', DanbooruController::class . ':deleteCategoryMapping');
-    // Tag name mappings
-    $group->post('/tag-map/add[/]', DanbooruController::class . ':addTagMapping');
-    $group->put('/tag-map/edit/{id}[/]', DanbooruController::class . ':editTagMapping');
-    $group->delete('/tag-map/delete[/]', DanbooruController::class . ':deleteTagMapping');
+    $group->get('/category-mappings[/]', DanbooruController::class . ':getCategoryMappings');
+    $group->post('/category-mappings[/]', DanbooruController::class . ':addCategoryMapping');
+    $group->delete('/category-mappings/{danbooru_category_id}[/]', DanbooruController::class . ':deleteCategoryMapping');
+    $group->get('/tag-mappings[/]', DanbooruController::class . ':getTagMappings');
+    $group->post('/tag-mappings[/]', DanbooruController::class . ':addTagMapping');
+    $group->put('/tag-mappings/{id}[/]', DanbooruController::class . ':editTagMapping');
+    $group->delete('/tag-mappings/{id}[/]', DanbooruController::class . ':deleteTagMapping');
 })->add($authMiddleware);
 
 // ============================================================
-// Upload Controllers (protected by auth middleware)
-// ============================================================
-$app->group('/upload', function (RouteCollectorProxy $group) {
-    $group->post('/media[/]', UploadController::class . ':uploadMedia');
-})->add($authMiddleware);
-
-// ============================================================
-// Duplicates Controllers (protected by auth middleware)
+// Duplicates
 // ============================================================
 $app->group('/duplicates', function (RouteCollectorProxy $group) {
     $group->get('/report[/]', DuplicatesController::class . ':getLatestReport');
     $group->post('/scan[/]', DuplicatesController::class . ':runScan');
-    $group->post('/dismiss[/]', DuplicatesController::class . ':dismissPair');
-    $group->delete('/media[/]', DuplicatesController::class . ':deleteMedia');
+    $group->post('/dismissals[/]', DuplicatesController::class . ':dismissPair');
 })->add($authMiddleware);
 
 // Run the app

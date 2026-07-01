@@ -12,6 +12,7 @@ function mockFetch(response: MockResponse = {}) {
     ok: response.ok ?? true,
     status: response.status ?? 200,
     json: async () => response.jsonData ?? {},
+    text: async () => JSON.stringify(response.jsonData ?? {}),
   })
   vi.stubGlobal('fetch', fetchMock)
   return fetchMock
@@ -47,6 +48,21 @@ describe('useApi', () => {
 
     const [, opts] = fetchMock.mock.calls[0]
     expect((opts.headers as Headers).get('Authorization')).toBe('Bearer tok123')
+  })
+
+  it('resolves to undefined on a 204 No Content (e.g. DELETE)', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 204,
+      text: async () => '',
+      json: async () => { throw new Error('no body') },
+    })
+    vi.stubGlobal('fetch', fetchMock)
+
+    const result = await useApi().del('/media/5')
+    expect(result).toBeUndefined()
+    const [, opts] = fetchMock.mock.calls[0]
+    expect(opts.method).toBe('DELETE')
   })
 
   it('throws a structured ApiError that reads the JSON error body', async () => {

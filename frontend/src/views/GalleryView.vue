@@ -2,17 +2,20 @@
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useGalleryData } from '../composables/useGalleryData'
-import { useGalleryStore, type MediaItem } from '../stores/gallery'
+import { useGalleryStore } from '../stores/gallery'
 import { useApi } from '../composables/useApi'
+import { endpoints } from '../api/endpoints'
+import type { MediaItem, MediaPage } from '../types'
 import GalleryCard from '../components/GalleryCard.vue'
 import PaginationBar from '../components/PaginationBar.vue'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 import { prefetchThumbnails } from '../composables/usePrefetch'
 
-interface PaginatedResponse {
-  items: MediaItem[]
-  total_pages: number
-  current_page: number
+/** Build the media-listing path for a page + optional tag filter. */
+function listUrl(page: number, perPage: number, tags?: string): string {
+  if (tags === 'untagged') return endpoints.media.untagged(page, perPage)
+  if (tags) return endpoints.media.withTags(tags, page, perPage)
+  return endpoints.media.page(page, perPage)
 }
 
 const props = defineProps<{
@@ -75,16 +78,7 @@ async function prefetchAdjacentPage(page: number, perPage: number, tags?: string
   if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType ?? '')) return
 
   try {
-    let url: string
-    if (tags === 'untagged') {
-      url = `/media/untagged/${page}/${perPage}/`
-    } else if (tags) {
-      url = `/media/with-tags/${encodeURIComponent(tags)}/${page}/${perPage}/`
-    } else {
-      url = `/media/page/${page}/${perPage}/`
-    }
-
-    const data = await api.get<PaginatedResponse>(url)
+    const data = await api.get<MediaPage>(listUrl(page, perPage, tags))
     if (data?.items?.length) {
       prefetchThumbnails(data.items)
     }
@@ -97,15 +91,7 @@ async function loadNextBatch() {
   if (loadingMore.value || allLoaded.value) return
   loadingMore.value = true
   try {
-    let url: string
-    if (props.tags === 'untagged') {
-      url = `/media/untagged/${currentBatchPage.value}/${INFINITE_BATCH_SIZE}/`
-    } else if (props.tags) {
-      url = `/media/with-tags/${encodeURIComponent(props.tags)}/${currentBatchPage.value}/${INFINITE_BATCH_SIZE}/`
-    } else {
-      url = `/media/page/${currentBatchPage.value}/${INFINITE_BATCH_SIZE}/`
-    }
-    const data = await api.get<PaginatedResponse>(url)
+    const data = await api.get<MediaPage>(listUrl(currentBatchPage.value, INFINITE_BATCH_SIZE, props.tags))
     const newItems = data?.items ?? []
     accumulatedItems.value = [...accumulatedItems.value, ...newItems]
     const maxPages = data?.total_pages ?? 1

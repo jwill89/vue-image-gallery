@@ -40,6 +40,11 @@ jobs:
       - name: Install dependencies
         run: composer install --prefer-dist --no-interaction --no-progress
 
+      - name: Verify OpenAPI spec is current
+        run: |
+          composer docs
+          git diff --exit-code openapi.json
+
       - name: Lint (phpcs / PSR-12)
         run: composer lint
 
@@ -70,6 +75,11 @@ jobs:
 
       - name: Install dependencies
         run: npm ci
+
+      - name: Verify generated API types are current
+        run: |
+          npm run gen:types
+          git diff --exit-code src/types/api.generated.ts
 
       - name: Type-check & build
         run: npm run build

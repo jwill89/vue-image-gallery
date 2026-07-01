@@ -1,22 +1,13 @@
 import { ref } from 'vue'
 import { useApi } from './useApi'
 import { useToastStore } from '../stores/toast'
-import type { MediaItem } from '../stores/gallery'
-
-/**
- * Response shape from the paginated media endpoints.
- * Items + pagination metadata in a single response.
- */
-interface PaginatedResponse {
-  items: MediaItem[]
-  total_pages: number
-  current_page: number
-}
+import { endpoints } from '../api/endpoints'
+import type { Media, MediaPage } from '../types'
 
 export function useGalleryData() {
   const api = useApi()
   const toastStore = useToastStore()
-  const items = ref<MediaItem[]>([])
+  const items = ref<Media[]>([])
   const totalPages = ref(0)
   const loading = ref(false)
   const loadFailed = ref(false)
@@ -26,16 +17,12 @@ export function useGalleryData() {
     loadFailed.value = false
 
     try {
-      let url: string
-      if (tags === 'untagged') {
-        url = `/media/untagged/${page}/${perPage}/`
-      } else if (tags) {
-        url = `/media/with-tags/${encodeURIComponent(tags)}/${page}/${perPage}/`
-      } else {
-        url = `/media/page/${page}/${perPage}/`
-      }
+      const url =
+        tags === 'untagged' ? endpoints.media.untagged(page, perPage)
+        : tags ? endpoints.media.withTags(tags, page, perPage)
+        : endpoints.media.page(page, perPage)
 
-      const data = await api.get<PaginatedResponse>(url)
+      const data = await api.get<MediaPage>(url)
 
       items.value = data?.items ?? []
       totalPages.value = data?.total_pages ?? 1

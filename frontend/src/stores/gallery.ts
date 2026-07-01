@@ -1,36 +1,12 @@
 import { defineStore } from 'pinia'
 import { ref, computed, watch } from 'vue'
 import { useApi } from '../composables/useApi'
+import { endpoints } from '../api/endpoints'
+import type { Tag, TagCategory, Count } from '../types'
 
-export interface Tag {
-  tag_id: number
-  tag_name: string
-  category_id: number
-  category_name?: string
-  media_count?: number
-}
-
-export interface TagCategory {
-  category_id: number
-  category_name: string
-  category_short: string
-  color: string
-  description: string
-  sort_order: number
-}
-
-export interface MediaItem {
-  media_id: number
-  media_type: 'image' | 'video'
-  file_name: string
-  file_time: number
-  hash: string
-  bits_fingerprint?: string
-  width?: number
-  height?: number
-  duration?: number
-  file_size?: number
-}
+// Domain types are generated from the OpenAPI spec — re-export the ones used
+// across the app so existing `from '../stores/gallery'` imports keep working.
+export type { Tag, TagCategory, Media, MediaItem } from '../types'
 
 export const useGalleryStore = defineStore('gallery', () => {
   const api = useApi()
@@ -61,12 +37,12 @@ export const useGalleryStore = defineStore('gallery', () => {
 
     try {
       const [tags, total, cats] = await Promise.all([
-        api.get<Tag[]>('/tags/all/'),
-        api.get<number>('/media/total/'),
-        api.get<TagCategory[]>('/tags/categories/')
+        api.get<Tag[]>(endpoints.tags.list),
+        api.get<Count>(endpoints.media.count),
+        api.get<TagCategory[]>(endpoints.tagCategories.list)
       ])
       allTags.value = tags ?? []
-      totalMedia.value = total ?? 0
+      totalMedia.value = total?.count ?? 0
       categories.value = cats ?? []
     } catch (e) {
       console.error('Initialization error:', e)
@@ -78,8 +54,8 @@ export const useGalleryStore = defineStore('gallery', () => {
   async function refreshTags() {
     try {
       const [tags, cats] = await Promise.all([
-        api.get<Tag[]>('/tags/all/'),
-        api.get<TagCategory[]>('/tags/categories/')
+        api.get<Tag[]>(endpoints.tags.list),
+        api.get<TagCategory[]>(endpoints.tagCategories.list)
       ])
       allTags.value = tags ?? []
       categories.value = cats ?? []
@@ -90,8 +66,8 @@ export const useGalleryStore = defineStore('gallery', () => {
 
   async function refreshTotals() {
     try {
-      const total = await api.get<number>('/media/total/')
-      totalMedia.value = total ?? 0
+      const total = await api.get<Count>(endpoints.media.count)
+      totalMedia.value = total?.count ?? 0
     } catch (e) {
       console.error('Error refreshing totals:', e)
     }

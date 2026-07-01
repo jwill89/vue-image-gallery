@@ -6,14 +6,15 @@ use PDO;
 use Slim\Http\ServerRequest as Request;
 use Slim\Http\Response;
 use Gallery\Collection\MediaCollection;
-use Gallery\Core\CacheGroup;
 use Gallery\Core\DatabaseConnection;
 use Gallery\Core\DuplicateScanner;
+use OpenApi\Attributes as OA;
 
 /**
- * DuplicatesController class
- * Handles duplicate image detection, management, and dismissal.
- * Duplicates are image-only (based on perceptual fingerprinting).
+ * DuplicatesController
+ * Duplicate image detection (perceptual fingerprinting): the latest report,
+ * running a scan, and dismissing a pair. Bulk deletion of the flagged media
+ * lives in MediaController (POST /media/bulk-delete).
  */
 class DuplicatesController extends AbstractController
 {
@@ -31,7 +32,16 @@ class DuplicatesController extends AbstractController
      * GET /duplicates/report — The latest duplicate-scan report, with dismissed
      * pairs filtered out and each pair enriched with media file names/hashes.
      */
-    public function getLatestReport(Request $request, Response $response, array $args): Response
+    #[OA\Get(
+        path: '/duplicates/report',
+        summary: 'Latest duplicate report',
+        tags: ['Duplicates'],
+        responses: [
+            new OA\Response(response: 200, description: 'The report', content: new OA\JsonContent(ref: '#/components/schemas/DuplicateReport')),
+            new OA\Response(response: 404, description: 'NoReportsFound', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
+    public function getLatestReport(Request $request, Response $response): Response
     {
         $dupes_dir = self::DUPES_DIRECTORY;
 
@@ -141,7 +151,17 @@ class DuplicatesController extends AbstractController
      * POST /duplicates/scan — Run the perceptual-hash duplicate scanner and
      * return summary stats (images compared, candidates, duplicates found).
      */
-    public function runScan(Request $request, Response $response, array $args): Response
+    #[OA\Post(
+        path: '/duplicates/scan',
+        summary: 'Run a duplicate scan',
+        tags: ['Duplicates'],
+        security: [['bearerAuth' => []]],
+        responses: [
+            new OA\Response(response: 200, description: 'Scan stats', content: new OA\JsonContent(ref: '#/components/schemas/ScanResult')),
+            new OA\Response(response: 500, description: 'ScanFailed', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
+    public function runScan(Request $request, Response $response): Response
     {
         $this->logger->info('Duplicate scan initiated');
 
@@ -165,14 +185,31 @@ class DuplicatesController extends AbstractController
     }
 
     /**
-     * POST /duplicates/dismiss/ — Dismiss a pair of media items as not-duplicates.
-     * Expects { media_id_1: int, media_id_2: int }
+     * POST /duplicates/dismissals — Dismiss a pair of media items as not-duplicates.
+     * Body: { media_id_1, media_id_2 }.
      */
-    public function dismissPair(Request $request, Response $response, array $args): Response
+    #[OA\Post(
+        path: '/duplicates/dismissals',
+        summary: 'Dismiss a duplicate pair',
+        tags: ['Duplicates'],
+        security: [['bearerAuth' => []]],
+        requestBody: new OA\RequestBody(required: true, content: new OA\JsonContent(
+            required: ['media_id_1', 'media_id_2'],
+            properties: [
+                new OA\Property(property: 'media_id_1', type: 'integer'),
+                new OA\Property(property: 'media_id_2', type: 'integer'),
+            ]
+        )),
+        responses: [
+            new OA\Response(response: 201, description: 'Dismissed', content: new OA\JsonContent(ref: '#/components/schemas/DismissResult')),
+            new OA\Response(response: 400, description: 'InvalidInput', content: new OA\JsonContent(ref: '#/components/schemas/ErrorResponse')),
+        ]
+    )]
+    public function dismissPair(Request $request, Response $response): Response
     {
         $params = $this->parsedBody($request);
-        $id1 = (int)($params['media_id_1'] ?? 0);
-        $id2 = (int)($params['media_id_2'] ?? 0);
+        $id1 = $this->intParam($params, 'media_id_1', 0);
+        $id2 = $this->intParam($params, 'media_id_2', 0);
 
         if ($id1 <= 0 || $id2 <= 0 || $id1 === $id2) {
             return $this->error($response, 'InvalidInput', 400, 'Two different, valid media IDs are required.');
@@ -192,58 +229,10 @@ class DuplicatesController extends AbstractController
 
         $this->logger->info('Duplicate pair dismissed', ['media_id_1' => $a, 'media_id_2' => $b]);
 
-        return $this->success($response, [
+        return $this->created($response, [
             'dismissed' => true,
             'media_id_1' => $a,
             'media_id_2' => $b,
-        ]);
-    }
-
-    /**
-     * DELETE /duplicates/media — Delete one or more media items by ID.
-     * Body: { media_ids: int[] }. Returns the deleted and failed ID lists.
-     */
-    public function deleteMedia(Request $request, Response $response, array $args): Response
-    {
-        $params = $this->parsedBody($request);
-        $media_ids = $params['media_ids'] ?? [];
-
-        if (empty($media_ids) || !is_array($media_ids)) {
-            return $this->error($response, 'InvalidInput', 400, 'A list of media IDs to delete is required.');
-        }
-
-        $this->logger->info('Delete media requested', ['media_ids' => $media_ids]);
-
-        $deleted = [];
-        $failed = [];
-
-        foreach ($media_ids as $id) {
-            $id = (int) $id;
-            if ($id <= 0) {
-                $failed[] = $id;
-                continue;
-            }
-
-            try {
-                $media = $this->media_collection->get($id);
-                if ($media !== null && $this->media_collection->delete($media)) {
-                    $deleted[] = $id;
-                } else {
-                    $failed[] = $id;
-                }
-            } catch (\Throwable $e) {
-                $failed[] = $id;
-            }
-        }
-
-        if (!empty($deleted)) {
-            $this->invalidateCache(CacheGroup::Media, CacheGroup::Tags);
-        }
-
-        return $this->success($response, [
-            'deleted' => $deleted,
-            'failed' => $failed,
-            'total_deleted' => count($deleted),
         ]);
     }
 }

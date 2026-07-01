@@ -4,7 +4,7 @@
  * Caching strategies:
  *   - Static assets (JS, CSS, fonts): Cache-first, versioned by cache name
  *   - Thumbnails (/media/thumbs/*):   Cache-first, LRU eviction at 2000 entries
- *   - API responses (/api/media/*):   Network-first, cache fallback for offline
+ *   - API media lists (/api/media?…): Network-first, cache fallback for offline
  *   - Full-size media:                Network-only (too large to cache)
  *
  * Adjacent page pre-caching:
@@ -12,7 +12,7 @@
  *   the SW fetches those thumbnails in the background and caches them.
  */
 
-const CACHE_VERSION = 'v1';
+const CACHE_VERSION = 'v2';
 const STATIC_CACHE  = `gallery-static-${CACHE_VERSION}`;
 const THUMB_CACHE   = `gallery-thumbs-${CACHE_VERSION}`;
 const API_CACHE     = `gallery-api-${CACHE_VERSION}`;
@@ -63,8 +63,8 @@ self.addEventListener('fetch', (event) => {
     return;
   }
 
-  // API gallery pages: network-first with cache fallback
-  if (url.pathname.startsWith('/api/media/page/') || url.pathname.startsWith('/api/media/with-tags/') || url.pathname.startsWith('/api/media/untagged/')) {
+  // API gallery listings (GET /api/media?…): network-first with cache fallback
+  if (url.pathname === '/api/media') {
     event.respondWith(networkFirst(event.request, API_CACHE));
     return;
   }

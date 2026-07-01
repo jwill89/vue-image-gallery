@@ -1,26 +1,14 @@
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { useApi, hasAuthToken } from '../composables/useApi'
-import { type Tag } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
+import { endpoints } from '../api/endpoints'
+import type { TagListItem, TagImplication } from '../types'
 import {
   getTextClassByName,
   getCategoryClassByName
 } from '../constants/categories'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
-
-interface DisplayTag extends Tag {
-  category_name: string
-  media_count: number
-  implication_count: number
-}
-
-interface Implication {
-  tag_id: number
-  tag_name: string
-  implied_tag_id: number
-  implied_tag_name: string
-}
 
 const props = defineProps<{
   tagId: number
@@ -34,10 +22,10 @@ const loading = ref(false)
 const loadFailed = ref(false)
 
 // Tag info
-const tagInfo = ref<DisplayTag | null>(null)
+const tagInfo = ref<TagListItem | null>(null)
 
 // All implications (filtered client-side for this tag)
-const allImplications = ref<Implication[]>([])
+const allImplications = ref<TagImplication[]>([])
 
 // Implications where this tag is the trigger
 const impliesOthers = computed(() =>
@@ -50,7 +38,7 @@ const impliedByOthers = computed(() =>
 )
 
 // All tags for the search dropdowns
-const allTags = ref<DisplayTag[]>([])
+const allTags = ref<TagListItem[]>([])
 
 // Add implication modal state
 const showModal = ref(false)
@@ -73,8 +61,8 @@ async function loadData() {
   loadFailed.value = false
   try {
     const [tags, implications] = await Promise.all([
-      api.get<DisplayTag[]>('/tags/display/'),
-      api.get<Implication[]>('/tags/implications/')
+      api.get<TagListItem[]>(endpoints.tags.display),
+      api.get<TagImplication[]>(endpoints.tagImplications.list)
     ])
 
     allTags.value = tags
@@ -100,7 +88,7 @@ function closeModal() {
   showModal.value = false
 }
 
-function selectImplied(tag: DisplayTag) {
+function selectImplied(tag: TagListItem) {
   impliedTagId.value = tag.tag_id
   impliedSearch.value = tag.tag_name
 }
@@ -124,10 +112,11 @@ async function submitImplication() {
 
   implLoading.value = true
   try {
-    allImplications.value = await api.post<Implication[]>('/tags/implications/add/', {
+    await api.post<TagImplication>(endpoints.tagImplications.list, {
       tag_id: props.tagId,
       implied_tag_id: impliedTagId.value
     })
+    allImplications.value = await api.get<TagImplication[]>(endpoints.tagImplications.list)
     closeModal()
     toastStore.success('Implication added.')
   } catch (e: any) {
@@ -148,10 +137,8 @@ async function removeImplication(tagId: number, impliedTagId: number) {
   if (!confirm('Remove this implication rule?')) return
 
   try {
-    allImplications.value = await api.del<Implication[]>('/tags/implications/remove/', {
-      tag_id: tagId,
-      implied_tag_id: impliedTagId
-    })
+    await api.del(endpoints.tagImplications.byPair(tagId, impliedTagId))
+    allImplications.value = await api.get<TagImplication[]>(endpoints.tagImplications.list)
     toastStore.success('Implication removed.')
   } catch (e: any) {
     toastStore.error(e.message || 'Failed to remove implication')
