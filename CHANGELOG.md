@@ -205,7 +205,6 @@ from the git history, not a formal release.
   with a dedicated tag page, sorting by tag name, a sticky footer with copyright/
   disclaimer, and a **cron** ingest script for importing media (including videos).
 
-[Unreleased]: https://github.com/jwill89/simple-image-gallery/compare/v3.0.0...HEAD
 [3.0.0]: https://github.com/jwill89/simple-image-gallery/compare/v2.0.2...v3.0.0
 [2.0.2]: https://github.com/jwill89/simple-image-gallery/compare/v2.0.1...v2.0.2
 [2.0.1]: https://github.com/jwill89/simple-image-gallery/compare/v2.0.0...v2.0.1

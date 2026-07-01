@@ -57,12 +57,12 @@ via `__DIR__`/`chdir(__DIR__ . '/..')`, so `backend/` *is* the app root in both 
 │   ├── phinx.php              # Phinx config (sqlite, db/gallery.db)
 │   ├── phpunit.xml            # PHPUnit 13 config (tests/Unit; coverage source)
 │   ├── phpcs.xml.dist         # PSR-12 ruleset for phpcs / phpcbf
+│   ├── openapi.json           # generated (committed) — via `composer docs`; served at /api/openapi.json
 │   │
 │   ├── api/
 │   │   ├── .htaccess          # Routes everything to api/index.php
 │   │   ├── index.php          # Slim bootstrap: middleware stack + ALL route definitions
 │   │   ├── dependencies.php   # PHP-DI definitions: provides PDO, autowires Repository/Collection→Controller
-│   │   ├── openapi.json       # generated (committed) — via `composer docs`; served at /api/openapi.json
 │   │   └── Routes/
 │   │       ├── OpenApiSpec.php          # global #[OA\Info/Server/SecurityScheme/Tag] metadata
 │   │       └── Internal/                # Controllers (namespace Routes\Internal), all #[OA\*]-annotated
