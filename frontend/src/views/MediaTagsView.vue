@@ -4,7 +4,7 @@ import { useRouter } from 'vue-router'
 import { useMediaTags } from '../composables/useMediaTags'
 import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
-import { useApi, hasAuthToken } from '../composables/useApi'
+import { useApi, getErrorMessage, hasAuthToken } from '../composables/useApi'
 import { useFavoritesStore } from '../stores/favorites'
 import { endpoints } from '../api/endpoints'
 import type { DanbooruFetchResult } from '../types'
@@ -22,7 +22,8 @@ const store = useGalleryStore()
 const toastStore = useToastStore()
 const api = useApi()
 const favorites = useFavoritesStore()
-const { tags, mediaItem, loading, loadFailed, fetchMediaAndTags, addTags, removeTag } = useMediaTags()
+const { tags, mediaItem, loading, loadFailed, fetchMediaAndTags, addTags, removeTag } =
+  useMediaTags()
 
 const showHelpModal = ref(false)
 const showDeleteModal = ref(false)
@@ -37,25 +38,33 @@ const showDanbooruModal = ref(false)
 const danbooruMode = ref<'auto' | 'post_id'>('auto')
 const danbooruPostId = ref('')
 const danbooruFetching = ref(false)
-const danbooruResult = ref<{ method: string; tags_applied: number; tags_created: number } | null>(null)
+const danbooruResult = ref<{ method: string; tags_applied: number; tags_created: number } | null>(
+  null,
+)
 const danbooruError = ref('')
 
 // Touch/swipe state
 let touchStartX = 0
 let touchStartY = 0
 let touchStartTime = 0
-const SWIPE_THRESHOLD = 50  // min px distance
-const SWIPE_MAX_TIME = 400  // max ms for a swipe
+const SWIPE_THRESHOLD = 50 // min px distance
+const SWIPE_MAX_TIME = 400 // max ms for a swipe
 const SWIPE_ANGLE_LIMIT = 30 // max degrees from horizontal
 
-const appliedTagIds = computed(() => tags.value.map(t => t.tag_id))
+const appliedTagIds = computed(() => tags.value.map((t) => t.tag_id))
 
 const formattedDate = computed(() => {
   if (!mediaItem.value?.file_time) return ''
   const date = new Date(mediaItem.value.file_time * 1000)
   return date.toLocaleString(undefined, {
-    weekday: 'short', year: 'numeric', month: 'short', day: 'numeric',
-    hour: '2-digit', minute: '2-digit', second: '2-digit', timeZoneName: 'short'
+    weekday: 'short',
+    year: 'numeric',
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    timeZoneName: 'short',
   })
 })
 
@@ -125,7 +134,9 @@ const isVideo = (url: string) => {
   return ext && ['mp4', 'webm', 'mov', 'avi', 'mkv'].includes(ext)
 }
 
-const hasGalleryContext = computed(() => store.lastViewedItemIds.length > 0 && currentIndex.value >= 0)
+const hasGalleryContext = computed(
+  () => store.lastViewedItemIds.length > 0 && currentIndex.value >= 0,
+)
 const currentIndex = computed(() => {
   return store.lastViewedItemIds.indexOf(props.mediaId)
 })
@@ -135,18 +146,20 @@ const prevId = computed(() => {
 })
 const nextId = computed(() => {
   const idx = currentIndex.value
-  return idx >= 0 && idx < store.lastViewedItemIds.length - 1 ? store.lastViewedItemIds[idx + 1] : null
+  return idx >= 0 && idx < store.lastViewedItemIds.length - 1
+    ? store.lastViewedItemIds[idx + 1]
+    : null
 })
 
 function navigatePrev() {
   if (prevId.value != null) {
-    router.replace({ name: 'media-tags', params: { id: prevId.value } })
+    void router.replace({ name: 'media-tags', params: { id: prevId.value } })
   }
 }
 
 function navigateNext() {
   if (nextId.value != null) {
-    router.replace({ name: 'media-tags', params: { id: nextId.value } })
+    void router.replace({ name: 'media-tags', params: { id: nextId.value } })
   }
 }
 
@@ -168,14 +181,14 @@ async function deleteMedia() {
 
     // Navigate to the next item if available, otherwise go back
     if (nextId.value != null) {
-      router.replace({ name: 'media-tags', params: { id: nextId.value } })
+      void router.replace({ name: 'media-tags', params: { id: nextId.value } })
     } else if (prevId.value != null) {
-      router.replace({ name: 'media-tags', params: { id: prevId.value } })
+      void router.replace({ name: 'media-tags', params: { id: prevId.value } })
     } else {
       router.back()
     }
-  } catch (e: any) {
-    toastStore.error(e.message || 'Failed to delete media.')
+  } catch (e) {
+    toastStore.error(getErrorMessage(e, 'Failed to delete media.'))
   } finally {
     deleting.value = false
   }
@@ -206,7 +219,10 @@ async function fetchDanbooruTags() {
       payload.danbooru_post_id = id
     }
 
-    const data = await api.post<DanbooruFetchResult>(endpoints.media.danbooruTags(props.mediaId), payload)
+    const data = await api.post<DanbooruFetchResult>(
+      endpoints.media.danbooruTags(props.mediaId),
+      payload,
+    )
 
     tags.value = data.tags ?? []
     store.allTags = data.all_tags ?? store.allTags
@@ -216,8 +232,8 @@ async function fetchDanbooruTags() {
       tags_created: data.tags_created,
     }
     toastStore.success(`Imported ${data.tags_applied} tags from Danbooru (via ${data.method}).`)
-  } catch (e: any) {
-    danbooruError.value = e.message || 'Failed to fetch tags from Danbooru.'
+  } catch (e) {
+    danbooruError.value = getErrorMessage(e, 'Failed to fetch tags from Danbooru.')
   } finally {
     danbooruFetching.value = false
   }
@@ -255,12 +271,12 @@ function onTouchEnd(e: TouchEvent) {
 
   // Must be mostly horizontal (not a scroll gesture)
   const angle = Math.abs(Math.atan2(dy, dx) * (180 / Math.PI))
-  if (angle > SWIPE_ANGLE_LIMIT && angle < (180 - SWIPE_ANGLE_LIMIT)) return
+  if (angle > SWIPE_ANGLE_LIMIT && angle < 180 - SWIPE_ANGLE_LIMIT) return
 
   if (dx < 0) {
-    navigateNext()  // swipe left → next
+    navigateNext() // swipe left → next
   } else {
-    navigatePrev()  // swipe right → prev
+    navigatePrev() // swipe right → prev
   }
 }
 </script>
@@ -271,16 +287,16 @@ function onTouchEnd(e: TouchEvent) {
       <LoadingSpinner v-if="loading && !mediaItem" />
       <div v-else-if="loadFailed && !mediaItem" class="has-text-centered py-6">
         <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-circle-exclamation fa-3x"></i>
+          <i class="fa-solid fa-circle-exclamation fa-3x" />
         </span>
         <p class="is-size-5 has-text-grey mt-4">Could not load media details.</p>
         <div class="buttons is-centered mt-4">
           <button class="button is-indigo" @click="load">
-            <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
+            <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
             <span>Retry</span>
           </button>
           <button class="button is-indigo is-outlined" @click="backToGallery">
-            <span class="icon"><i class="fa-solid fa-backward"></i></span>
+            <span class="icon"><i class="fa-solid fa-backward" /></span>
             <span>Back to Gallery</span>
           </button>
         </div>
@@ -296,21 +312,27 @@ function onTouchEnd(e: TouchEvent) {
             >
               <div v-if="!mediaReady" class="media-placeholder">
                 <span class="icon is-large has-text-grey">
-                  <i class="fa-solid fa-spinner fa-spin fa-2x"></i>
+                  <i class="fa-solid fa-spinner fa-spin fa-2x" />
                 </span>
               </div>
               <video
                 v-if="mediaUrl && isVideo(mediaUrl)"
                 controls
                 :src="mediaUrl"
-                :class="['media-fade', { 'is-loaded': mediaReady, 'thumb-blur': store.blurThumbnails }]"
+                :class="[
+                  'media-fade',
+                  { 'is-loaded': mediaReady, 'thumb-blur': store.blurThumbnails },
+                ]"
                 @loadeddata="mediaReady = true"
               />
               <img
                 v-else-if="mediaUrl"
                 :src="mediaUrl"
                 alt=""
-                :class="['media-fade', { 'is-loaded': mediaReady, 'thumb-blur': store.blurThumbnails }]"
+                :class="[
+                  'media-fade',
+                  { 'is-loaded': mediaReady, 'thumb-blur': store.blurThumbnails },
+                ]"
                 @load="mediaReady = true"
               />
             </figure>
@@ -321,18 +343,28 @@ function onTouchEnd(e: TouchEvent) {
             <div class="media-toolbar">
               <div class="toolbar-nav">
                 <button class="button is-indigo" @click="backToGallery">
-                  <span class="icon"><i class="fa-solid fa-backward"></i></span>
+                  <span class="icon"><i class="fa-solid fa-backward" /></span>
                   <span>Back</span>
                 </button>
                 <div v-if="hasGalleryContext" class="field has-addons mb-0">
                   <div class="control">
-                    <button class="button is-indigo is-outlined" :disabled="prevId == null" @click="navigatePrev" title="Previous (← or swipe right)">
-                      <span class="icon"><i class="fa-solid fa-arrow-left"></i></span>
+                    <button
+                      class="button is-indigo is-outlined"
+                      :disabled="prevId == null"
+                      title="Previous (← or swipe right)"
+                      @click="navigatePrev"
+                    >
+                      <span class="icon"><i class="fa-solid fa-arrow-left" /></span>
                     </button>
                   </div>
                   <div class="control">
-                    <button class="button is-indigo is-outlined" :disabled="nextId == null" @click="navigateNext" title="Next (→ or swipe left)">
-                      <span class="icon"><i class="fa-solid fa-arrow-right"></i></span>
+                    <button
+                      class="button is-indigo is-outlined"
+                      :disabled="nextId == null"
+                      title="Next (→ or swipe left)"
+                      @click="navigateNext"
+                    >
+                      <span class="icon"><i class="fa-solid fa-arrow-right" /></span>
                     </button>
                   </div>
                 </div>
@@ -341,28 +373,34 @@ function onTouchEnd(e: TouchEvent) {
                 <button
                   class="button"
                   :class="favorites.isFavorite(mediaId) ? 'is-pink' : 'is-pink is-outlined'"
+                  :title="
+                    favorites.isFavorite(mediaId) ? 'Remove from favorites' : 'Add to favorites'
+                  "
                   @click="favorites.toggle(mediaId)"
-                  :title="favorites.isFavorite(mediaId) ? 'Remove from favorites' : 'Add to favorites'"
                 >
                   <span class="icon">
-                    <i :class="favorites.isFavorite(mediaId) ? 'fa-solid fa-heart' : 'fa-regular fa-heart'"></i>
+                    <i
+                      :class="
+                        favorites.isFavorite(mediaId) ? 'fa-solid fa-heart' : 'fa-regular fa-heart'
+                      "
+                    />
                   </span>
                 </button>
                 <button
                   v-if="authenticated"
                   class="button is-cyan"
-                  @click="openDanbooruModal"
                   title="Fetch tags from Danbooru"
+                  @click="openDanbooruModal"
                 >
-                  <span class="icon"><i class="fa-solid fa-download"></i></span>
+                  <span class="icon"><i class="fa-solid fa-download" /></span>
                 </button>
                 <button
                   v-if="authenticated"
                   class="button is-danger is-outlined"
-                  @click="showDeleteModal = true"
                   title="Delete this media"
+                  @click="showDeleteModal = true"
                 >
-                  <span class="icon"><i class="fa-solid fa-trash"></i></span>
+                  <span class="icon"><i class="fa-solid fa-trash" /></span>
                 </button>
               </div>
             </div>
@@ -389,11 +427,18 @@ function onTouchEnd(e: TouchEvent) {
                 </tr>
                 <tr>
                   <th>MD5 Hash</th>
-                  <td><code>{{ mediaItem?.hash }}</code></td>
+                  <td>
+                    <code>{{ mediaItem?.hash }}</code>
+                  </td>
                 </tr>
                 <tr>
                   <th>Full Media</th>
-                  <td><a :href="fullPath" target="_blank">View Full {{ isVideoItem ? 'Video' : 'Image' }} <i class="fa-solid fa-up-right-from-square fa-xs"></i></a></td>
+                  <td>
+                    <a :href="fullPath" target="_blank"
+                      >View Full {{ isVideoItem ? 'Video' : 'Image' }}
+                      <i class="fa-solid fa-up-right-from-square fa-xs"
+                    /></a>
+                  </td>
                 </tr>
               </tbody>
             </table>
@@ -410,7 +455,11 @@ function onTouchEnd(e: TouchEvent) {
             >
               <template #actions>
                 <div class="control">
-                  <button class="button is-primary" @click="onAddTags" :disabled="selectedTagIds.length === 0">
+                  <button
+                    class="button is-primary"
+                    :disabled="selectedTagIds.length === 0"
+                    @click="onAddTags"
+                  >
                     Add Tags
                   </button>
                 </div>
@@ -418,7 +467,7 @@ function onTouchEnd(e: TouchEvent) {
             </TagMultiSelect>
             <p class="help">
               Add tags. Multiple tags are allowed.
-              <a @click.prevent="showHelpModal = !showHelpModal" style="cursor:pointer">
+              <a style="cursor: pointer" @click.prevent="showHelpModal = !showHelpModal">
                 {{ showHelpModal ? 'Hide tag help' : 'Show tag help' }}
               </a>
               to read more about tag categories, differentiated by colors.
@@ -448,81 +497,101 @@ function onTouchEnd(e: TouchEvent) {
 
       <!-- Delete Confirmation Modal -->
       <div class="modal" :class="{ 'is-active': showDeleteModal }">
-        <div class="modal-background" @click="showDeleteModal = false"></div>
+        <div class="modal-background" @click="showDeleteModal = false" />
         <div class="modal-card">
           <header class="modal-card-head">
             <p class="modal-card-title">Confirm Deletion</p>
-            <button class="delete" aria-label="close" @click="showDeleteModal = false"></button>
+            <button class="delete" aria-label="close" @click="showDeleteModal = false" />
           </header>
           <section class="modal-card-body">
             <p>Are you sure you want to permanently delete this media item?</p>
             <p class="has-text-danger mt-2">
-              <span class="icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
+              <span class="icon"><i class="fa-solid fa-triangle-exclamation" /></span>
               This action cannot be undone.
             </p>
           </section>
           <footer class="modal-card-foot">
-            <button class="button is-danger" :class="{ 'is-loading': deleting }" :disabled="deleting" @click="deleteMedia">
-              <span class="icon"><i class="fa-solid fa-trash"></i></span>
+            <button
+              class="button is-danger"
+              :class="{ 'is-loading': deleting }"
+              :disabled="deleting"
+              @click="deleteMedia"
+            >
+              <span class="icon"><i class="fa-solid fa-trash" /></span>
               <span>Delete</span>
             </button>
-            <button class="button" @click="showDeleteModal = false" :disabled="deleting">Cancel</button>
+            <button class="button" :disabled="deleting" @click="showDeleteModal = false">
+              Cancel
+            </button>
           </footer>
         </div>
       </div>
       <!-- Danbooru Fetch Modal -->
       <div class="modal" :class="{ 'is-active': showDanbooruModal }">
-        <div class="modal-background" @click="showDanbooruModal = false"></div>
+        <div class="modal-background" @click="showDanbooruModal = false" />
         <div class="modal-card">
           <header class="modal-card-head">
-            <p class="modal-card-title"><strong>Fetch Danbooru Tags</strong></p>
-            <button class="delete" aria-label="close" @click="showDanbooruModal = false"></button>
+            <p class="modal-card-title">
+              <strong>Fetch Danbooru Tags</strong>
+            </p>
+            <button class="delete" aria-label="close" @click="showDanbooruModal = false" />
           </header>
           <section class="modal-card-body">
             <div class="field">
               <label class="label">Lookup Method</label>
               <div class="control">
                 <label class="radio mr-4">
-                  <input type="radio" v-model="danbooruMode" value="auto" :disabled="danbooruFetching" />
+                  <input
+                    v-model="danbooruMode"
+                    type="radio"
+                    value="auto"
+                    :disabled="danbooruFetching"
+                  />
                   Auto (MD5 + IQDB)
                 </label>
                 <label class="radio">
-                  <input type="radio" v-model="danbooruMode" value="post_id" :disabled="danbooruFetching" />
+                  <input
+                    v-model="danbooruMode"
+                    type="radio"
+                    value="post_id"
+                    :disabled="danbooruFetching"
+                  />
                   Danbooru Post ID
                 </label>
               </div>
             </div>
 
-            <div class="field" v-if="danbooruMode === 'post_id'">
+            <div v-if="danbooruMode === 'post_id'" class="field">
               <label class="label">Post ID</label>
               <div class="control">
                 <input
+                  v-model="danbooruPostId"
                   class="input"
                   type="text"
-                  v-model="danbooruPostId"
                   placeholder="e.g. 1234567"
                   :disabled="danbooruFetching"
                   @keyup.enter="fetchDanbooruTags"
                 />
               </div>
               <p class="help">
-                Enter the numeric post ID from a Danbooru URL
-                (e.g. <code>danbooru.donmai.us/posts/<strong>1234567</strong></code>).
+                Enter the numeric post ID from a Danbooru URL (e.g.
+                <code>danbooru.donmai.us/posts/<strong>1234567</strong></code
+                >).
               </p>
             </div>
 
             <div v-if="danbooruMode === 'auto'" class="content">
               <p class="has-text-grey is-size-7">
-                Will search Danbooru by this media's MD5 hash first.
-                If no match is found, it will try IQDB visual similarity as a fallback.
+                Will search Danbooru by this media's MD5 hash first. If no match is found, it will
+                try IQDB visual similarity as a fallback.
               </p>
             </div>
 
             <div v-if="danbooruResult" class="notification is-success is-light mt-4">
               <p>
-                <span class="icon"><i class="fa-solid fa-check"></i></span>
-                Found via <strong>{{ danbooruResult.method }}</strong> —
-                applied <strong>{{ danbooruResult.tags_applied }}</strong> tag(s)
+                <span class="icon"><i class="fa-solid fa-check" /></span>
+                Found via <strong>{{ danbooruResult.method }}</strong> — applied
+                <strong>{{ danbooruResult.tags_applied }}</strong> tag(s)
                 <template v-if="danbooruResult.tags_created > 0">
                   (<strong>{{ danbooruResult.tags_created }}</strong> new)
                 </template>
@@ -531,7 +600,7 @@ function onTouchEnd(e: TouchEvent) {
 
             <div v-if="danbooruError" class="notification is-danger is-light mt-4">
               <p>
-                <span class="icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
+                <span class="icon"><i class="fa-solid fa-triangle-exclamation" /></span>
                 {{ danbooruError }}
               </p>
             </div>
@@ -544,10 +613,16 @@ function onTouchEnd(e: TouchEvent) {
                 :disabled="danbooruFetching"
                 @click="fetchDanbooruTags"
               >
-                <span class="icon"><i class="fa-solid fa-download"></i></span>
+                <span class="icon"><i class="fa-solid fa-download" /></span>
                 <span>Fetch Tags</span>
               </button>
-              <button class="button" @click="showDanbooruModal = false" :disabled="danbooruFetching">Close</button>
+              <button
+                class="button"
+                :disabled="danbooruFetching"
+                @click="showDanbooruModal = false"
+              >
+                Close
+              </button>
             </div>
           </footer>
         </div>

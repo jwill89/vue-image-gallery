@@ -38,13 +38,11 @@ const allLoaded = ref(false)
 const scrollSentinel = ref<HTMLElement | null>(null)
 let observer: IntersectionObserver | null = null
 
-const displayItems = computed(() =>
-  isInfiniteScroll.value ? accumulatedItems.value : items.value
-)
+const displayItems = computed(() => (isInfiniteScroll.value ? accumulatedItems.value : items.value))
 
 function updateStoreItemIds() {
   store.lastViewedItemIds = displayItems.value
-    .map(i => i.media_id)
+    .map((i) => i.media_id)
     .filter((id): id is number => id != null)
 }
 
@@ -64,7 +62,7 @@ async function loadPage() {
   } else {
     await fetchPage(props.page, props.perPage, props.tags)
     // Pre-cache thumbnails for the next page
-    prefetchAdjacentPage(props.page + 1, props.perPage, props.tags)
+    void prefetchAdjacentPage(props.page + 1, props.perPage, props.tags)
   }
   updateStoreItemIds()
 }
@@ -74,7 +72,9 @@ async function prefetchAdjacentPage(page: number, perPage: number, tags?: string
 
   // Skip the extra round-trip on metered/slow connections — prefetching the
   // next page (to warm its thumbnails) isn't worth the data there.
-  const conn = (navigator as unknown as { connection?: { saveData?: boolean; effectiveType?: string } }).connection
+  const conn = (
+    navigator as unknown as { connection?: { saveData?: boolean; effectiveType?: string } }
+  ).connection
   if (conn?.saveData || /(^|-)2g$/.test(conn?.effectiveType ?? '')) return
 
   try {
@@ -91,7 +91,9 @@ async function loadNextBatch() {
   if (loadingMore.value || allLoaded.value) return
   loadingMore.value = true
   try {
-    const data = await api.get<MediaPage>(listUrl(currentBatchPage.value, INFINITE_BATCH_SIZE, props.tags))
+    const data = await api.get<MediaPage>(
+      listUrl(currentBatchPage.value, INFINITE_BATCH_SIZE, props.tags),
+    )
     const newItems = data?.items ?? []
     accumulatedItems.value = [...accumulatedItems.value, ...newItems]
     const maxPages = data?.total_pages ?? 1
@@ -112,9 +114,12 @@ function setupObserver() {
   observer?.disconnect()
   const el = scrollSentinel.value
   if (!el) return
-  observer = new IntersectionObserver((entries) => {
-    if (entries[0].isIntersecting) loadNextBatch()
-  }, { rootMargin: '400px' })
+  observer = new IntersectionObserver(
+    (entries) => {
+      if (entries[0].isIntersecting) void loadNextBatch()
+    },
+    { rootMargin: '400px' },
+  )
   observer.observe(el)
 }
 
@@ -122,7 +127,12 @@ watch(scrollSentinel, setupObserver)
 
 function onKeydown(e: KeyboardEvent) {
   if (isInfiniteScroll.value || loading.value) return
-  if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement || e.target instanceof HTMLSelectElement) return
+  if (
+    e.target instanceof HTMLInputElement ||
+    e.target instanceof HTMLTextAreaElement ||
+    e.target instanceof HTMLSelectElement
+  )
+    return
 
   if (e.key === 'ArrowLeft' && props.page > 1) {
     onNavigate(props.page - 1)
@@ -132,7 +142,7 @@ function onKeydown(e: KeyboardEvent) {
 }
 
 onMounted(() => {
-  loadPage()
+  void loadPage()
   window.addEventListener('keydown', onKeydown)
 })
 watch(() => [props.page, props.perPage, props.tags], loadPage)
@@ -143,22 +153,22 @@ onUnmounted(() => {
 
 function onNavigate(page: number) {
   if (props.tags) {
-    router.push({
+    void router.push({
       name: 'media-with-tags',
-      params: { page, perPage: props.perPage, tags: props.tags }
+      params: { page, perPage: props.perPage, tags: props.tags },
     })
   } else {
-    router.push({
+    void router.push({
       name: 'media',
-      params: { page, perPage: props.perPage }
+      params: { page, perPage: props.perPage },
     })
   }
 }
 
 function onCardClick(id: number) {
-  router.push({
+  void router.push({
     name: 'media-tags',
-    params: { id }
+    params: { id },
   })
 }
 </script>
@@ -170,19 +180,24 @@ function onCardClick(id: number) {
 
       <div v-else-if="loadFailed || displayItems.length === 0" class="has-text-centered py-6">
         <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-images fa-3x"></i>
+          <i class="fa-solid fa-images fa-3x" />
         </span>
         <p class="is-size-5 has-text-grey mt-4">
           {{ loadFailed ? 'Could not load the gallery. Please try again.' : 'No items found.' }}
         </p>
         <button v-if="loadFailed" class="button is-indigo mt-4" @click="loadPage">
-          <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
+          <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
           <span>Retry</span>
         </button>
       </div>
 
       <div v-else>
-        <PaginationBar v-if="!isInfiniteScroll" :current-page="page" :total-pages="totalPages" @navigate="onNavigate" />
+        <PaginationBar
+          v-if="!isInfiniteScroll"
+          :current-page="page"
+          :total-pages="totalPages"
+          @navigate="onNavigate"
+        />
         <hr v-if="!isInfiniteScroll" />
 
         <div style="min-height: 75vh">
@@ -196,8 +211,14 @@ function onCardClick(id: number) {
           </div>
         </div>
 
-        <div v-if="isInfiniteScroll && !allLoaded" ref="scrollSentinel" class="has-text-centered py-5">
-          <span class="icon is-large has-text-grey"><i class="fa-solid fa-spinner fa-spin fa-2x"></i></span>
+        <div
+          v-if="isInfiniteScroll && !allLoaded"
+          ref="scrollSentinel"
+          class="has-text-centered py-5"
+        >
+          <span class="icon is-large has-text-grey"
+            ><i class="fa-solid fa-spinner fa-spin fa-2x"
+          /></span>
         </div>
 
         <p v-if="isInfiniteScroll && allLoaded" class="has-text-centered has-text-grey py-4">
@@ -205,7 +226,12 @@ function onCardClick(id: number) {
         </p>
 
         <hr v-if="!isInfiniteScroll" />
-        <PaginationBar v-if="!isInfiniteScroll" :current-page="page" :total-pages="totalPages" @navigate="onNavigate" />
+        <PaginationBar
+          v-if="!isInfiniteScroll"
+          :current-page="page"
+          :total-pages="totalPages"
+          @navigate="onNavigate"
+        />
       </div>
     </div>
   </section>

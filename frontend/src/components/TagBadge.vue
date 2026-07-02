@@ -16,6 +16,6 @@ const emit = defineEmits<{
 <template>
   <span class="tag is-medium" :class="getCategoryClassById(categoryId)">
     {{ tagName }}
-    <button v-if="removable" class="delete" @click="emit('remove', tagId)" aria-label="delete"></button>
+    <button v-if="removable" class="delete" aria-label="delete" @click="emit('remove', tagId)" />
   </span>
 </template>

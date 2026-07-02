@@ -17,7 +17,9 @@ async function login() {
   authLoading.value = true
   authError.value = null
   try {
-    const result = await api.post<LoginResponse>(endpoints.auth.login, { password: passwordInput.value })
+    const result = await api.post<LoginResponse>(endpoints.auth.login, {
+      password: passwordInput.value,
+    })
     setAuthToken(result.token)
     passwordInput.value = ''
     emit('authenticated')
@@ -35,14 +37,20 @@ async function login() {
     <p class="mb-4">Please enter the admin password to manage tags.</p>
     <div class="field">
       <div class="control">
-        <input class="input" type="password" v-model="passwordInput" placeholder="Password"
-          @keyup.enter="login" />
+        <input
+          v-model="passwordInput"
+          class="input"
+          type="password"
+          placeholder="Password"
+          @keyup.enter="login"
+        />
       </div>
-      <p v-if="authError" class="help is-danger">{{ authError }}</p>
+      <p v-if="authError" class="help is-danger">
+        {{ authError }}
+      </p>
     </div>
     <button class="button is-primary" :class="{ 'is-loading': authLoading }" @click="login">
       Login
     </button>
   </div>
 </template>
-

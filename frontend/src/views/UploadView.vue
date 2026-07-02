@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
-import { useApi, hasAuthToken, setAuthToken } from '../composables/useApi'
+import { useApi, getErrorMessage, hasAuthToken, setAuthToken } from '../composables/useApi'
 import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
 import { endpoints } from '../api/endpoints'
@@ -36,22 +36,32 @@ interface UploadResult {
 
 const uploadResults = ref<UploadResult[]>([])
 
-const IMAGE_EXTENSIONS = ['.jpg', '.jpeg', '.png', '.gif', '.webp', '.bmp', '.tiff', '.tif', '.avif']
+const IMAGE_EXTENSIONS = [
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.gif',
+  '.webp',
+  '.bmp',
+  '.tiff',
+  '.tif',
+  '.avif',
+]
 const VIDEO_EXTENSIONS = ['.mp4', '.webm', '.mov', '.avi', '.mkv', '.flv', '.wmv', '.m4v']
 const ALL_EXTENSIONS = [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS]
 
 const acceptString = ALL_EXTENSIONS.join(',')
 
 const hasFiles = computed(() => selectedFiles.value.length > 0)
-const totalSize = computed(() =>
-  selectedFiles.value.reduce((sum, f) => sum + f.size, 0)
-)
+const totalSize = computed(() => selectedFiles.value.reduce((sum, f) => sum + f.size, 0))
 
 async function login() {
   authLoading.value = true
   authError.value = null
   try {
-    const result = await api.post<LoginResponse>(endpoints.auth.login, { password: passwordInput.value })
+    const result = await api.post<LoginResponse>(endpoints.auth.login, {
+      password: passwordInput.value,
+    })
     setAuthToken(result.token)
     authenticated.value = true
     passwordInput.value = ''
@@ -63,7 +73,7 @@ async function login() {
 }
 
 function formatSize(bytes: number): string {
-  if (bytes < 1024) return bytes + ' B'
+  if (bytes < 1024) return `${bytes} B`
   if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(1) + ' KB'
   if (bytes < 1024 * 1024 * 1024) return (bytes / (1024 * 1024)).toFixed(1) + ' MB'
   return (bytes / (1024 * 1024 * 1024)).toFixed(2) + ' GB'
@@ -95,9 +105,12 @@ async function checkAnimatedGif(file: File): Promise<boolean> {
       const arr = new Uint8Array(reader.result as ArrayBuffer)
       let frames = 0
       for (let i = 0; i < arr.length - 2; i++) {
-        if (arr[i] === 0x21 && arr[i + 1] === 0xF9 && arr[i + 2] === 0x04) {
+        if (arr[i] === 0x21 && arr[i + 1] === 0xf9 && arr[i + 2] === 0x04) {
           frames++
-          if (frames > 1) { resolve(true); return }
+          if (frames > 1) {
+            resolve(true)
+            return
+          }
         }
       }
       resolve(false)
@@ -123,7 +136,7 @@ function addFiles(fileList: FileList | File[]) {
   for (const file of files) {
     if (isValidFile(file)) {
       // Avoid duplicates by name
-      if (!selectedFiles.value.some(f => f.name === file.name && f.size === file.size)) {
+      if (!selectedFiles.value.some((f) => f.name === file.name && f.size === file.size)) {
         valid.push(file)
       }
     } else {
@@ -136,7 +149,7 @@ function addFiles(fileList: FileList | File[]) {
   // Check any new GIF files for animation in the background
   for (const file of valid) {
     if (getFileExt(file.name) === '.gif') {
-      checkAnimatedGif(file).then((animated) => {
+      void checkAnimatedGif(file).then((animated) => {
         if (animated) {
           animatedGifs.value = new Set([...animatedGifs.value, fileKey(file)])
         }
@@ -193,7 +206,7 @@ async function uploadFiles() {
   if (!hasFiles.value || uploading.value) return
 
   uploading.value = true
-  uploadResults.value = selectedFiles.value.map(f => ({
+  uploadResults.value = selectedFiles.value.map((f) => ({
     file_name: f.name,
     status: 'pending' as const,
   }))
@@ -243,12 +256,16 @@ async function uploadFiles() {
 
     // Clear the file list — keep only failed items (duplicates and successes are resolved)
     const failedNames = new Set(
-      result.results.filter(r => r.status === 'error').map(r => r.file_name)
+      result.results.filter((r) => r.status === 'error').map((r) => r.file_name),
     )
-    selectedFiles.value = selectedFiles.value.filter(f => failedNames.has(f.name))
-  } catch (e: any) {
-    toastStore.error(e.message || 'The upload request failed. Please try again.', 8000, 'Upload Failed')
-    uploadResults.value = selectedFiles.value.map(f => ({
+    selectedFiles.value = selectedFiles.value.filter((f) => failedNames.has(f.name))
+  } catch (e) {
+    toastStore.error(
+      getErrorMessage(e, 'The upload request failed. Please try again.'),
+      8000,
+      'Upload Failed',
+    )
+    uploadResults.value = selectedFiles.value.map((f) => ({
       file_name: f.name,
       status: 'error' as const,
       message: 'Upload request failed',
@@ -268,23 +285,25 @@ async function uploadFiles() {
           <div class="column is-4">
             <div class="box">
               <h2 class="title is-4 has-text-centered">
-                <span class="icon"><i class="fa-solid fa-lock"></i></span>
+                <span class="icon"><i class="fa-solid fa-lock" /></span>
                 Authentication Required
               </h2>
               <p class="has-text-centered mb-4">Enter the admin password to access uploads.</p>
               <div class="field">
                 <div class="control has-icons-left">
                   <input
+                    v-model="passwordInput"
                     class="input"
                     :class="{ 'is-danger': authError }"
                     type="password"
                     placeholder="Password"
-                    v-model="passwordInput"
                     @keyup.enter="login"
                   />
-                  <span class="icon is-left"><i class="fa-solid fa-key"></i></span>
+                  <span class="icon is-left"><i class="fa-solid fa-key" /></span>
                 </div>
-                <p v-if="authError" class="help is-danger">{{ authError }}</p>
+                <p v-if="authError" class="help is-danger">
+                  {{ authError }}
+                </p>
               </div>
               <button
                 class="button is-primary is-fullwidth"
@@ -306,7 +325,7 @@ async function uploadFiles() {
         <!-- Danbooru Tag Fetch Toggle -->
         <div class="field">
           <label class="checkbox">
-            <input type="checkbox" v-model="fetchTags" />
+            <input v-model="fetchTags" type="checkbox" />
             Fetch tags from Danbooru
           </label>
           <p class="help">
@@ -333,14 +352,12 @@ async function uploadFiles() {
           />
           <div class="drop-zone-content">
             <span class="icon is-large has-text-grey">
-              <i class="fa-solid fa-cloud-arrow-up fa-3x"></i>
+              <i class="fa-solid fa-cloud-arrow-up fa-3x" />
             </span>
             <p class="is-size-5 has-text-grey mt-3">
               Drag &amp; drop files here, or click to browse
             </p>
-            <p class="is-size-7 has-text-grey-light mt-1">
-              Images, GIFs, and videos up to 500 MB
-            </p>
+            <p class="is-size-7 has-text-grey-light mt-1">Images, GIFs, and videos up to 500 MB</p>
           </div>
         </div>
 
@@ -351,14 +368,16 @@ async function uploadFiles() {
               <div class="level-item">
                 <h3 class="title is-6 mb-0">
                   {{ selectedFiles.length }} file(s) selected
-                  <span class="has-text-grey has-text-weight-normal">({{ formatSize(totalSize) }})</span>
+                  <span class="has-text-grey has-text-weight-normal"
+                    >({{ formatSize(totalSize) }})</span
+                  >
                 </h3>
               </div>
             </div>
             <div class="level-right">
               <div class="level-item">
-                <button class="button is-small" @click="clearFiles" :disabled="uploading">
-                  <span class="icon"><i class="fa-solid fa-xmark"></i></span>
+                <button class="button is-small" :disabled="uploading" @click="clearFiles">
+                  <span class="icon"><i class="fa-solid fa-xmark" /></span>
                   <span>Clear All</span>
                 </button>
               </div>
@@ -373,14 +392,17 @@ async function uploadFiles() {
             >
               <div class="file-item-info">
                 <span class="icon has-text-grey-light mr-2">
-                  <i :class="fileIcon(file)"></i>
+                  <i :class="fileIcon(file)" />
                 </span>
                 <span class="file-item-name">{{ file.name }}</span>
                 <span class="has-text-grey-light ml-2">({{ formatSize(file.size) }})</span>
               </div>
               <div class="file-item-status">
-                <span v-if="uploadResults[index]?.status === 'success'" class="has-text-success is-size-7">
-                  <span class="icon"><i class="fa-solid fa-circle-check"></i></span>
+                <span
+                  v-if="uploadResults[index]?.status === 'success'"
+                  class="has-text-success is-size-7"
+                >
+                  <span class="icon"><i class="fa-solid fa-circle-check" /></span>
                   <template v-if="uploadResults[index]?.tags_applied">
                     {{ uploadResults[index].tags_applied }} tags
                   </template>
@@ -388,24 +410,33 @@ async function uploadFiles() {
                     No tags found
                   </template>
                 </span>
-                <span v-else-if="uploadResults[index]?.status === 'duplicate'" class="has-text-warning is-size-7">
-                  <span class="icon"><i class="fa-solid fa-clone"></i></span>
+                <span
+                  v-else-if="uploadResults[index]?.status === 'duplicate'"
+                  class="has-text-warning is-size-7"
+                >
+                  <span class="icon"><i class="fa-solid fa-clone" /></span>
                   Duplicate
                 </span>
-                <span v-else-if="uploadResults[index]?.status === 'error'" class="has-text-danger is-size-7">
-                  <span class="icon"><i class="fa-solid fa-circle-xmark"></i></span>
+                <span
+                  v-else-if="uploadResults[index]?.status === 'error'"
+                  class="has-text-danger is-size-7"
+                >
+                  <span class="icon"><i class="fa-solid fa-circle-xmark" /></span>
                   {{ uploadResults[index]?.message }}
                 </span>
-                <span v-else-if="uploadResults[index]?.status === 'pending'" class="icon has-text-grey">
-                  <i class="fa-solid fa-spinner fa-spin"></i>
+                <span
+                  v-else-if="uploadResults[index]?.status === 'pending'"
+                  class="icon has-text-grey"
+                >
+                  <i class="fa-solid fa-spinner fa-spin" />
                 </span>
                 <button
                   v-else
                   class="delete is-small"
-                  @click="removeFile(index)"
                   :disabled="uploading"
                   title="Remove"
-                ></button>
+                  @click="removeFile(index)"
+                />
               </div>
             </div>
           </div>
@@ -418,26 +449,36 @@ async function uploadFiles() {
               :disabled="uploading || !hasFiles"
               @click="uploadFiles"
             >
-              <span class="icon"><i class="fa-solid fa-upload"></i></span>
+              <span class="icon"><i class="fa-solid fa-upload" /></span>
               <span>Upload {{ selectedFiles.length }} File(s)</span>
             </button>
           </div>
         </div>
 
         <!-- Upload Results Summary -->
-        <div v-if="uploadResults.length > 0 && !uploading && selectedFiles.length === 0" class="mt-5">
-          <div class="notification is-success is-light" v-if="uploadResults.every(r => r.status === 'success')">
+        <div
+          v-if="uploadResults.length > 0 && !uploading && selectedFiles.length === 0"
+          class="mt-5"
+        >
+          <div
+            v-if="uploadResults.every((r) => r.status === 'success')"
+            class="notification is-success is-light"
+          >
             <p>
-              <span class="icon"><i class="fa-solid fa-circle-check"></i></span>
+              <span class="icon"><i class="fa-solid fa-circle-check" /></span>
               All files uploaded successfully!
             </p>
           </div>
-          <div class="notification is-warning is-light" v-else-if="uploadResults.some(r => r.status === 'duplicate')">
+          <div
+            v-else-if="uploadResults.some((r) => r.status === 'duplicate')"
+            class="notification is-warning is-light"
+          >
             <p>
-              <span class="icon"><i class="fa-solid fa-circle-check"></i></span>
+              <span class="icon"><i class="fa-solid fa-circle-check" /></span>
               Upload complete.
-              {{ uploadResults.filter(r => r.status === 'success').length }} uploaded,
-              {{ uploadResults.filter(r => r.status === 'duplicate').length }} duplicate(s) skipped.
+              {{ uploadResults.filter((r) => r.status === 'success').length }} uploaded,
+              {{ uploadResults.filter((r) => r.status === 'duplicate').length }} duplicate(s)
+              skipped.
             </p>
           </div>
         </div>
@@ -453,7 +494,9 @@ async function uploadFiles() {
   padding: 3rem 2rem;
   text-align: center;
   cursor: pointer;
-  transition: border-color 0.2s, background 0.2s;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
 }
 
 .drop-zone:hover {

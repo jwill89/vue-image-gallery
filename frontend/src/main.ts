@@ -31,7 +31,7 @@ app.mount('#app')
 // Register the service worker for thumbnail caching and prefetch
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js').catch((err) => {
+    navigator.serviceWorker.register('/sw.js').catch((err: unknown) => {
       console.warn('SW registration failed:', err)
     })
   })

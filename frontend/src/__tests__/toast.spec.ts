@@ -32,7 +32,7 @@ describe('toast store', () => {
     store.warning('careful', 0)
     store.info('fyi', 0)
 
-    expect(store.toasts.map(t => t.type)).toEqual(['success', 'warning', 'info'])
+    expect(store.toasts.map((t) => t.type)).toEqual(['success', 'warning', 'info'])
     expect(store.toasts[0].title).toBe('Success')
   })
 

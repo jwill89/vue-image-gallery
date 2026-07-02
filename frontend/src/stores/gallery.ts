@@ -28,7 +28,7 @@ export const useGalleryStore = defineStore('gallery', () => {
   })
 
   // Getters
-  const tagNames = computed(() => allTags.value.map(t => t.tag_name))
+  const tagNames = computed(() => allTags.value.map((t) => t.tag_name))
 
   // Actions
   async function initialize() {
@@ -39,7 +39,7 @@ export const useGalleryStore = defineStore('gallery', () => {
       const [tags, total, cats] = await Promise.all([
         api.get<Tag[]>(endpoints.tags.list),
         api.get<Count>(endpoints.media.count),
-        api.get<TagCategory[]>(endpoints.tagCategories.list)
+        api.get<TagCategory[]>(endpoints.tagCategories.list),
       ])
       allTags.value = tags ?? []
       totalMedia.value = total?.count ?? 0
@@ -55,7 +55,7 @@ export const useGalleryStore = defineStore('gallery', () => {
     try {
       const [tags, cats] = await Promise.all([
         api.get<Tag[]>(endpoints.tags.list),
-        api.get<TagCategory[]>(endpoints.tagCategories.list)
+        api.get<TagCategory[]>(endpoints.tagCategories.list),
       ])
       allTags.value = tags ?? []
       categories.value = cats ?? []
@@ -90,6 +90,6 @@ export const useGalleryStore = defineStore('gallery', () => {
     initialize,
     refreshTags,
     refreshTotals,
-    toggleBlur
+    toggleBlur,
   }
 })

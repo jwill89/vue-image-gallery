@@ -18,10 +18,10 @@ const emit = defineEmits<{
 const selectedIds = computed({
   get: () => {
     return props.modelValue
-      .map(name => {
+      .map((name) => {
         const negated = name.startsWith('-')
         const cleanName = negated ? name.substring(1) : name
-        const tag = store.allTags.find(t => t.tag_name.toLowerCase() === cleanName.toLowerCase())
+        const tag = store.allTags.find((t) => t.tag_name.toLowerCase() === cleanName.toLowerCase())
         if (!tag) return undefined
         return negated ? -tag.tag_id : tag.tag_id
       })
@@ -29,15 +29,15 @@ const selectedIds = computed({
   },
   set: (ids: number[]) => {
     const names = ids
-      .map(id => {
+      .map((id) => {
         const negated = id < 0
-        const tag = store.allTags.find(t => t.tag_id === Math.abs(id))
+        const tag = store.allTags.find((t) => t.tag_id === Math.abs(id))
         if (!tag) return undefined
         return negated ? `-${tag.tag_name}` : tag.tag_name
       })
       .filter((name): name is string => name !== undefined)
     emit('update:modelValue', names)
-  }
+  },
 })
 
 const hasSelectedTags = computed(() => props.modelValue.length > 0)
@@ -45,27 +45,23 @@ const hasSelectedTags = computed(() => props.modelValue.length > 0)
 
 <template>
   <div class="tag-search-container">
-    <TagMultiSelect
-      v-model="selectedIds"
-      placeholder="Search tags..."
-      @submit="emit('search')"
-    >
+    <TagMultiSelect v-model="selectedIds" placeholder="Search tags..." @submit="emit('search')">
       <template #actions>
-        <div class="control" v-if="!hasSelectedTags">
+        <div v-if="!hasSelectedTags" class="control">
           <button class="button" disabled>
-            <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+            <span class="icon"><i class="fa-solid fa-magnifying-glass" /></span>
           </button>
         </div>
         <template v-else>
           <div class="control">
             <button class="button is-primary" @click="emit('search')">
-              <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+              <span class="icon"><i class="fa-solid fa-magnifying-glass" /></span>
               <span>Search</span>
             </button>
           </div>
           <div class="control">
             <button class="button is-light" @click="emit('reset')">
-              <span class="icon"><i class="fa-solid fa-xmark"></i></span>
+              <span class="icon"><i class="fa-solid fa-xmark" /></span>
             </button>
           </div>
         </template>

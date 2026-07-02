@@ -12,7 +12,7 @@ const navbarHeight = ref(52)
 let resizeObserver: ResizeObserver | null = null
 
 onMounted(() => {
-  store.initialize()
+  void store.initialize()
 
   // Observe navbar height changes
   const navEl = document.querySelector('nav.navbar')

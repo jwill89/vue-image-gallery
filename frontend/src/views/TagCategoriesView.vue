@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useApi, hasAuthToken } from '../composables/useApi'
+import { useApi, getErrorMessage, hasAuthToken } from '../composables/useApi'
 import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
 import { endpoints } from '../api/endpoints'
@@ -40,8 +40,8 @@ async function loadCategories() {
   loadFailed.value = false
   try {
     categories.value = await api.get<TagCategory[]>(endpoints.tagCategories.list)
-  } catch (e: any) {
-    toastStore.error(e.message || 'Failed to load categories.')
+  } catch (e) {
+    toastStore.error(getErrorMessage(e, 'Failed to load categories.'))
     loadFailed.value = true
   } finally {
     loading.value = false
@@ -55,9 +55,8 @@ function openNewModal() {
   formShort.value = ''
   formColor.value = 'white'
   formDescription.value = ''
-  formSortOrder.value = categories.value.length > 0
-    ? Math.max(...categories.value.map(c => c.sort_order)) + 1
-    : 0
+  formSortOrder.value =
+    categories.value.length > 0 ? Math.max(...categories.value.map((c) => c.sort_order)) + 1 : 0
   formHelp.value = ''
   formHelpClass.value = ''
   showModal.value = true
@@ -109,10 +108,10 @@ async function submitForm() {
     }
     await loadCategories()
     closeModal()
-    store.refreshTags()
+    void store.refreshTags()
     toastStore.success(formMode.value === 'edit' ? 'Category updated.' : 'Category created.')
-  } catch (e: any) {
-    formHelp.value = e.message || 'Error saving category.'
+  } catch (e) {
+    formHelp.value = getErrorMessage(e, 'Error saving category.')
     formHelpClass.value = 'is-danger'
   } finally {
     formLoading.value = false
@@ -131,10 +130,10 @@ async function confirmDelete() {
     await api.del(endpoints.tagCategories.byId(deleteTarget.value.category_id))
     await loadCategories()
     showDeleteModal.value = false
-    store.refreshTags()
+    void store.refreshTags()
     toastStore.success('Category deleted.')
-  } catch (e: any) {
-    toastStore.error(e.message || 'Could not delete category.')
+  } catch (e) {
+    toastStore.error(getErrorMessage(e, 'Could not delete category.'))
     showDeleteModal.value = false
   } finally {
     deleteLoading.value = false
@@ -151,11 +150,11 @@ onMounted(loadCategories)
 
       <div v-else-if="loadFailed" class="has-text-centered py-6">
         <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-palette fa-3x"></i>
+          <i class="fa-solid fa-palette fa-3x" />
         </span>
         <p class="is-size-5 has-text-grey mt-4">Could not load categories.</p>
         <button class="button is-indigo mt-4" @click="loadCategories">
-          <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
+          <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
           <span>Retry</span>
         </button>
       </div>
@@ -168,10 +167,10 @@ onMounted(loadCategories)
               <h1 class="title is-4 mb-0">Tag Categories</h1>
             </div>
           </div>
-          <div class="level-right" v-if="authenticated">
+          <div v-if="authenticated" class="level-right">
             <div class="level-item">
               <button class="button is-primary" @click="openNewModal">
-                <span class="icon"><i class="fa-solid fa-plus"></i></span>
+                <span class="icon"><i class="fa-solid fa-plus" /></span>
                 <span>New Category</span>
               </button>
             </div>
@@ -179,8 +178,8 @@ onMounted(loadCategories)
         </div>
 
         <p class="mb-5 has-text-grey">
-          Manage the tag categories used throughout the gallery. Each category has a unique shortcode
-          (used when adding tags, e.g. <code>a:artist name</code>) and a display color.
+          Manage the tag categories used throughout the gallery. Each category has a unique
+          shortcode (used when adding tags, e.g. <code>a:artist name</code>) and a display color.
         </p>
 
         <!-- Categories Table -->
@@ -201,18 +200,34 @@ onMounted(loadCategories)
               <td>{{ cat.category_id }}</td>
               <td>{{ cat.sort_order }}</td>
               <td>
-                <span class="tag is-medium" :class="colorToTagClass(cat.color)">{{ cat.category_name }}</span>
+                <span class="tag is-medium" :class="colorToTagClass(cat.color)">{{
+                  cat.category_name
+                }}</span>
               </td>
-              <td><code>{{ cat.category_short }}:</code></td>
-              <td><span class="tag is-small" :class="colorToTagClass(cat.color)">{{ cat.color }}</span></td>
+              <td>
+                <code>{{ cat.category_short }}:</code>
+              </td>
+              <td>
+                <span class="tag is-small" :class="colorToTagClass(cat.color)">{{
+                  cat.color
+                }}</span>
+              </td>
               <td>{{ cat.description }}</td>
               <td v-if="authenticated">
                 <div class="buttons are-small">
-                  <button class="button is-cyan is-outlined" @click="openEditModal(cat)" title="Edit">
-                    <span class="icon"><i class="fa-solid fa-pen"></i></span>
+                  <button
+                    class="button is-cyan is-outlined"
+                    title="Edit"
+                    @click="openEditModal(cat)"
+                  >
+                    <span class="icon"><i class="fa-solid fa-pen" /></span>
                   </button>
-                  <button class="button is-danger is-outlined" @click="openDeleteConfirm(cat)" title="Delete">
-                    <span class="icon"><i class="fa-solid fa-trash"></i></span>
+                  <button
+                    class="button is-danger is-outlined"
+                    title="Delete"
+                    @click="openDeleteConfirm(cat)"
+                  >
+                    <span class="icon"><i class="fa-solid fa-trash" /></span>
                   </button>
                 </div>
               </td>
@@ -228,29 +243,42 @@ onMounted(loadCategories)
 
       <!-- New/Edit Category Modal -->
       <div class="modal" :class="{ 'is-active': showModal }">
-        <div class="modal-background" @click="closeModal"></div>
+        <div class="modal-background" @click="closeModal" />
         <div class="modal-card">
           <header class="modal-card-head">
             <p class="modal-card-title">
               <strong>{{ formMode === 'edit' ? 'Edit Category' : 'New Category' }}</strong>
             </p>
-            <button class="delete" aria-label="close" @click="closeModal"></button>
+            <button class="delete" aria-label="close" @click="closeModal" />
           </header>
           <section class="modal-card-body">
             <div class="field">
               <label class="label">Category Name</label>
               <div class="control">
-                <input class="input" type="text" v-model="formName" placeholder="e.g. Artist"
-                  @keyup.enter="submitForm" />
+                <input
+                  v-model="formName"
+                  class="input"
+                  type="text"
+                  placeholder="e.g. Artist"
+                  @keyup.enter="submitForm"
+                />
               </div>
             </div>
             <div class="field">
               <label class="label">Shortcode</label>
               <div class="control">
-                <input class="input" type="text" v-model="formShort" placeholder="e.g. a" maxlength="5"
-                  @keyup.enter="submitForm" />
+                <input
+                  v-model="formShort"
+                  class="input"
+                  type="text"
+                  placeholder="e.g. a"
+                  maxlength="5"
+                  @keyup.enter="submitForm"
+                />
               </div>
-              <p class="help">A short prefix users type when adding tags (e.g. <code>a:artist name</code>).</p>
+              <p class="help">
+                A short prefix users type when adding tags (e.g. <code>a:artist name</code>).
+              </p>
             </div>
             <div class="field">
               <label class="label">Display Color</label>
@@ -261,36 +289,57 @@ onMounted(loadCategories)
                   type="button"
                   class="tag is-medium color-swatch"
                   :class="[colorToTagClass(c), { 'is-selected-swatch': formColor === c }]"
-                  @click="formColor = c"
                   :title="c"
+                  @click="formColor = c"
                 >
                   {{ c }}
                 </button>
               </div>
               <p class="help mt-2">
-                Preview: <span class="tag is-medium" :class="colorToTagClass(formColor)">{{ formName || 'Sample' }}</span>
+                Preview:
+                <span class="tag is-medium" :class="colorToTagClass(formColor)">{{
+                  formName || 'Sample'
+                }}</span>
               </p>
             </div>
             <div class="field">
               <label class="label">Description</label>
               <div class="control">
-                <textarea class="textarea" v-model="formDescription" rows="2"
-                  placeholder="Brief description shown in the tag help modal"></textarea>
+                <textarea
+                  v-model="formDescription"
+                  class="textarea"
+                  rows="2"
+                  placeholder="Brief description shown in the tag help modal"
+                />
               </div>
             </div>
             <div class="field">
               <label class="label">Sort Order</label>
               <div class="control">
-                <input class="input" type="number" v-model.number="formSortOrder" min="0"
-                  @keyup.enter="submitForm" />
+                <input
+                  v-model.number="formSortOrder"
+                  class="input"
+                  type="number"
+                  min="0"
+                  @keyup.enter="submitForm"
+                />
               </div>
-              <p class="help">Controls display order in the help modal and tag sorting. Lower numbers appear first.</p>
+              <p class="help">
+                Controls display order in the help modal and tag sorting. Lower numbers appear
+                first.
+              </p>
             </div>
-            <p v-if="formHelp" class="help" :class="formHelpClass">{{ formHelp }}</p>
+            <p v-if="formHelp" class="help" :class="formHelpClass">
+              {{ formHelp }}
+            </p>
           </section>
           <footer class="modal-card-foot">
             <div class="buttons">
-              <button class="button is-primary" :class="{ 'is-loading': formLoading }" @click="submitForm">
+              <button
+                class="button is-primary"
+                :class="{ 'is-loading': formLoading }"
+                @click="submitForm"
+              >
                 {{ formMode === 'edit' ? 'Save Changes' : 'Create Category' }}
               </button>
               <button class="button" @click="closeModal">Cancel</button>
@@ -301,11 +350,13 @@ onMounted(loadCategories)
 
       <!-- Delete Confirmation Modal -->
       <div class="modal" :class="{ 'is-active': showDeleteModal }">
-        <div class="modal-background" @click="showDeleteModal = false"></div>
+        <div class="modal-background" @click="showDeleteModal = false" />
         <div class="modal-card">
           <header class="modal-card-head">
-            <p class="modal-card-title"><strong>Delete Category</strong></p>
-            <button class="delete" aria-label="close" @click="showDeleteModal = false"></button>
+            <p class="modal-card-title">
+              <strong>Delete Category</strong>
+            </p>
+            <button class="delete" aria-label="close" @click="showDeleteModal = false" />
           </header>
           <section class="modal-card-body">
             <p>
@@ -313,13 +364,17 @@ onMounted(loadCategories)
               <strong>{{ deleteTarget?.category_name }}</strong> category?
             </p>
             <p class="has-text-danger mt-2">
-              <span class="icon"><i class="fa-solid fa-triangle-exclamation"></i></span>
+              <span class="icon"><i class="fa-solid fa-triangle-exclamation" /></span>
               This will only work if no tags are assigned to this category.
             </p>
           </section>
           <footer class="modal-card-foot">
             <div class="buttons">
-              <button class="button is-danger" :class="{ 'is-loading': deleteLoading }" @click="confirmDelete">
+              <button
+                class="button is-danger"
+                :class="{ 'is-loading': deleteLoading }"
+                @click="confirmDelete"
+              >
                 Delete
               </button>
               <button class="button" @click="showDeleteModal = false">Cancel</button>
@@ -341,7 +396,9 @@ onMounted(loadCategories)
 .color-swatch {
   cursor: pointer;
   border: 2px solid transparent;
-  transition: border-color 0.15s, transform 0.15s;
+  transition:
+    border-color 0.15s,
+    transform 0.15s;
   font-size: 0.7rem !important;
   text-transform: capitalize;
 }

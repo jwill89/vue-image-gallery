@@ -47,7 +47,8 @@ export const endpoints = {
   },
   danbooru: {
     categoryMappings: '/danbooru/category-mappings',
-    categoryMapping: (danbooruCategoryId: Id) => `/danbooru/category-mappings/${danbooruCategoryId}`,
+    categoryMapping: (danbooruCategoryId: Id) =>
+      `/danbooru/category-mappings/${danbooruCategoryId}`,
     tagMappings: '/danbooru/tag-mappings',
     tagMapping: (id: Id) => `/danbooru/tag-mappings/${id}`,
   },

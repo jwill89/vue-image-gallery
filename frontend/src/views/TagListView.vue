@@ -1,15 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useApi, hasAuthToken } from '../composables/useApi'
+import { useApi, getErrorMessage, hasAuthToken } from '../composables/useApi'
 import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
 import { endpoints } from '../api/endpoints'
 import type { TagListItem } from '../types'
-import {
-  getTextClassByName,
-  getCategoryClassByName
-} from '../constants/categories'
+import { getTextClassByName, getCategoryClassByName } from '../constants/categories'
 import LoadingSpinner from '../components/LoadingSpinner.vue'
 
 const api = useApi()
@@ -59,7 +56,9 @@ const migrateTargetOptions = computed(() => {
   if (!migrateTargetSearch.value.trim()) return []
   const q = migrateTargetSearch.value.toLowerCase()
   return allDisplayTags.value
-    .filter(t => t.tag_id !== migrateSourceTag.value?.tag_id && t.tag_name.toLowerCase().includes(q))
+    .filter(
+      (t) => t.tag_id !== migrateSourceTag.value?.tag_id && t.tag_name.toLowerCase().includes(q),
+    )
     .slice(0, 10)
 })
 
@@ -67,7 +66,9 @@ const deleteMigrateTargetOptions = computed(() => {
   if (!deleteMigrateTargetSearch.value.trim()) return []
   const q = deleteMigrateTargetSearch.value.toLowerCase()
   return allDisplayTags.value
-    .filter(t => t.tag_id !== deleteTargetTag.value?.tag_id && t.tag_name.toLowerCase().includes(q))
+    .filter(
+      (t) => t.tag_id !== deleteTargetTag.value?.tag_id && t.tag_name.toLowerCase().includes(q),
+    )
     .slice(0, 10)
 })
 
@@ -75,8 +76,9 @@ const filteredTags = computed(() => {
   let filtered = allDisplayTags.value
   if (searchQuery.value.trim()) {
     const q = searchQuery.value.toLowerCase()
-    filtered = filtered.filter(t =>
-      t.tag_name.toLowerCase().includes(q) || (t.category_name ?? '').toLowerCase().includes(q)
+    filtered = filtered.filter(
+      (t) =>
+        t.tag_name.toLowerCase().includes(q) || (t.category_name ?? '').toLowerCase().includes(q),
     )
   }
   const key = sortKey.value
@@ -86,12 +88,14 @@ const filteredTags = computed(() => {
     if (typeof va === 'string' && typeof vb === 'string') {
       return sortAsc.value ? va.localeCompare(vb) : vb.localeCompare(va)
     }
-    return sortAsc.value ? (Number(va) - Number(vb)) : (Number(vb) - Number(va))
+    return sortAsc.value ? Number(va) - Number(vb) : Number(vb) - Number(va)
   })
   return filtered
 })
 
-const totalFilteredPages = computed(() => Math.max(1, Math.ceil(filteredTags.value.length / pageSize.value)))
+const totalFilteredPages = computed(() =>
+  Math.max(1, Math.ceil(filteredTags.value.length / pageSize.value)),
+)
 const pagedTags = computed(() => {
   const start = (currentPage.value - 1) * pageSize.value
   return filteredTags.value.slice(start, start + pageSize.value)
@@ -125,8 +129,8 @@ async function loadTags(showSpinner = true) {
   loadFailed.value = false
   try {
     allDisplayTags.value = await api.get<TagListItem[]>(endpoints.tags.display)
-  } catch (e: any) {
-    toastStore.error(e.message || 'Failed to load tags')
+  } catch (e) {
+    toastStore.error(getErrorMessage(e, 'Failed to load tags'))
     loadFailed.value = true
     allDisplayTags.value = []
   } finally {
@@ -183,12 +187,12 @@ async function submitForm() {
     if (formMode.value === 'edit' && formEditId.value !== null) {
       await api.put(endpoints.tags.byId(formEditId.value), {
         tag_name: formTagName.value,
-        category_id: Number(formCategoryId.value)
+        category_id: Number(formCategoryId.value),
       })
     } else {
       // Check if tag already exists
       const exists = allDisplayTags.value.some(
-        t => t.tag_name.toLowerCase() === formTagName.value.trim().toLowerCase()
+        (t) => t.tag_name.toLowerCase() === formTagName.value.trim().toLowerCase(),
       )
       if (exists) {
         formHelp.value = 'Tag already exists.'
@@ -197,12 +201,12 @@ async function submitForm() {
       }
       await api.post(endpoints.tags.create, {
         tag_name: formTagName.value,
-        category_id: Number(formCategoryId.value)
+        category_id: Number(formCategoryId.value),
       })
     }
     closeModal()
     await loadTags(false)
-    store.refreshTags()
+    void store.refreshTags()
   } catch {
     formHelp.value = 'Error saving tag.'
     formHelpClass.value = 'is-danger'
@@ -210,9 +214,9 @@ async function submitForm() {
 }
 
 function searchByTag(tagName: string) {
-  router.push({
+  void router.push({
     name: 'media-with-tags',
-    params: { page: 1, perPage: 40, tags: tagName }
+    params: { page: 1, perPage: 40, tags: tagName },
   })
 }
 
@@ -227,7 +231,7 @@ function onTagNameInput() {
       return
     }
     const exists = allDisplayTags.value.some(
-      t => t.tag_name.toLowerCase() === formTagName.value.trim().toLowerCase()
+      (t) => t.tag_name.toLowerCase() === formTagName.value.trim().toLowerCase(),
     )
     if (exists) {
       formHelp.value = 'Tag already exists.'
@@ -271,11 +275,11 @@ async function submitMigrate() {
   migrateLoading.value = true
   try {
     await api.post(endpoints.tags.migrate(migrateSourceTag.value.tag_id), {
-      target_tag_id: migrateTargetId.value
+      target_tag_id: migrateTargetId.value,
     })
     closeMigrateModal()
     await loadTags(false)
-    store.refreshTags()
+    void store.refreshTags()
   } catch {
     migrateHelp.value = 'Error migrating tag.'
     migrateHelpClass.value = 'is-danger'
@@ -319,11 +323,11 @@ async function submitDelete() {
     await api.del(
       migrateToId
         ? endpoints.tags.deleteMigrateTo(deleteTargetTag.value.tag_id, migrateToId)
-        : endpoints.tags.byId(deleteTargetTag.value.tag_id)
+        : endpoints.tags.byId(deleteTargetTag.value.tag_id),
     )
     closeDeleteModal()
     await loadTags(false)
-    store.refreshTags()
+    void store.refreshTags()
   } catch {
     deleteHelp.value = 'Error deleting tag.'
     deleteHelpClass.value = 'is-danger'
@@ -333,7 +337,7 @@ async function submitDelete() {
 }
 
 onMounted(() => {
-  loadTags()
+  void loadTags()
 })
 </script>
 
@@ -343,11 +347,11 @@ onMounted(() => {
       <LoadingSpinner v-if="loading" />
       <div v-else-if="loadFailed" class="has-text-centered py-6">
         <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-tags fa-3x"></i>
+          <i class="fa-solid fa-tags fa-3x" />
         </span>
         <p class="is-size-5 has-text-grey mt-4">Could not load tags. Please try again.</p>
         <button class="button is-indigo mt-4" @click="loadTags()">
-          <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
+          <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
           <span>Retry</span>
         </button>
       </div>
@@ -359,19 +363,19 @@ onMounted(() => {
               <h1 class="title is-4">Tags</h1>
             </div>
           </div>
-          <div class="level-right" v-if="authenticated">
+          <div v-if="authenticated" class="level-right">
             <div class="level-item">
               <div class="buttons">
                 <button class="button is-primary" @click="openNewTagModal">
-                  <span class="icon"><i class="fa-solid fa-plus"></i></span>
+                  <span class="icon"><i class="fa-solid fa-plus" /></span>
                   <span>New Tag</span>
                 </button>
                 <router-link class="button is-purple is-outlined" :to="{ name: 'tag-categories' }">
-                  <span class="icon"><i class="fa-solid fa-palette"></i></span>
+                  <span class="icon"><i class="fa-solid fa-palette" /></span>
                   <span>Categories</span>
                 </router-link>
                 <router-link class="button is-cyan is-outlined" :to="{ name: 'danbooru-rules' }">
-                  <span class="icon"><i class="fa-solid fa-file-import"></i></span>
+                  <span class="icon"><i class="fa-solid fa-file-import" /></span>
                   <span>Import Rules</span>
                 </router-link>
               </div>
@@ -382,7 +386,7 @@ onMounted(() => {
         <!-- Search and page size -->
         <div class="field is-grouped mb-4">
           <div class="control is-expanded">
-            <input class="input" type="text" v-model="searchQuery" placeholder="Search tags..." />
+            <input v-model="searchQuery" class="input" type="text" placeholder="Search tags..." />
           </div>
           <div class="control">
             <div class="select">
@@ -400,14 +404,14 @@ onMounted(() => {
         <table class="table is-striped is-hoverable is-fullwidth">
           <thead>
             <tr>
-              <th @click="toggleSort('tag_name')" style="cursor:pointer">
-                Tag <i class="fas" :class="sortIcon('tag_name')"></i>
+              <th style="cursor: pointer" @click="toggleSort('tag_name')">
+                Tag <i class="fas" :class="sortIcon('tag_name')" />
               </th>
-              <th @click="toggleSort('category_name')" style="cursor:pointer">
-                Category <i class="fas" :class="sortIcon('category_name')"></i>
+              <th style="cursor: pointer" @click="toggleSort('category_name')">
+                Category <i class="fas" :class="sortIcon('category_name')" />
               </th>
-              <th @click="toggleSort('media_count')" style="cursor:pointer">
-                Media <i class="fas" :class="sortIcon('media_count')"></i>
+              <th style="cursor: pointer" @click="toggleSort('media_count')">
+                Media <i class="fas" :class="sortIcon('media_count')" />
               </th>
               <th>Implies</th>
               <th v-if="authenticated">Actions</th>
@@ -426,7 +430,11 @@ onMounted(() => {
                 </span>
               </td>
               <td>
-                <a v-if="tag.media_count > 0" class="has-text-link" @click="searchByTag(tag.tag_name)">
+                <a
+                  v-if="tag.media_count > 0"
+                  class="has-text-link"
+                  @click="searchByTag(tag.tag_name)"
+                >
                   {{ tag.media_count }}
                 </a>
                 <span v-else>0</span>
@@ -449,14 +457,22 @@ onMounted(() => {
               </td>
               <td v-if="authenticated">
                 <div class="buttons are-small">
-                  <button class="button is-cyan is-outlined" @click="editTag(tag)" title="Edit">
-                    <span class="icon"><i class="fa-solid fa-pen"></i></span>
+                  <button class="button is-cyan is-outlined" title="Edit" @click="editTag(tag)">
+                    <span class="icon"><i class="fa-solid fa-pen" /></span>
                   </button>
-                  <button class="button is-amber is-outlined" @click="openMigrateModal(tag)" title="Migrate">
-                    <span class="icon"><i class="fa-solid fa-arrow-right-arrow-left"></i></span>
+                  <button
+                    class="button is-amber is-outlined"
+                    title="Migrate"
+                    @click="openMigrateModal(tag)"
+                  >
+                    <span class="icon"><i class="fa-solid fa-arrow-right-arrow-left" /></span>
                   </button>
-                  <button class="button is-danger is-outlined" @click="openDeleteModal(tag)" title="Delete">
-                    <span class="icon"><i class="fa-solid fa-trash"></i></span>
+                  <button
+                    class="button is-danger is-outlined"
+                    title="Delete"
+                    @click="openDeleteModal(tag)"
+                  >
+                    <span class="icon"><i class="fa-solid fa-trash" /></span>
                   </button>
                 </div>
               </td>
@@ -468,38 +484,59 @@ onMounted(() => {
         </table>
 
         <!-- Pagination -->
-        <nav class="pagination is-centered is-small" v-if="totalFilteredPages > 1">
-          <a class="pagination-previous" :class="{ 'is-disabled': currentPage <= 1 }"
-            @click.prevent="currentPage > 1 && currentPage--">Previous</a>
-          <a class="pagination-next" :class="{ 'is-disabled': currentPage >= totalFilteredPages }"
-            @click.prevent="currentPage < totalFilteredPages && currentPage++">Next</a>
+        <nav v-if="totalFilteredPages > 1" class="pagination is-centered is-small">
+          <a
+            class="pagination-previous"
+            :class="{ 'is-disabled': currentPage <= 1 }"
+            @click.prevent="currentPage > 1 && currentPage--"
+            >Previous</a
+          >
+          <a
+            class="pagination-next"
+            :class="{ 'is-disabled': currentPage >= totalFilteredPages }"
+            @click.prevent="currentPage < totalFilteredPages && currentPage++"
+            >Next</a
+          >
           <ul class="pagination-list">
-            <li><span class="pagination-link is-current">Page {{ currentPage }} of {{ totalFilteredPages }}</span></li>
+            <li>
+              <span class="pagination-link is-current"
+                >Page {{ currentPage }} of {{ totalFilteredPages }}</span
+              >
+            </li>
           </ul>
         </nav>
       </template>
 
       <!-- New/Edit Tag Modal -->
       <div class="modal" :class="{ 'is-active': showFormModal }">
-        <div class="modal-background" @click="closeModal"></div>
+        <div class="modal-background" @click="closeModal" />
         <div class="modal-card">
           <header class="modal-card-head">
             <p class="modal-card-title">
               <strong>{{ formMode === 'edit' ? 'Edit Tag' : 'New Tag' }}</strong>
             </p>
-            <button class="delete" aria-label="close" @click="closeModal"></button>
+            <button class="delete" aria-label="close" @click="closeModal" />
           </header>
           <section class="modal-card-body">
             <div class="field">
               <label class="label">Tag Name</label>
               <div class="control has-icons-left">
-                <input class="input" :class="formHelpClass" type="text" placeholder="Enter tag name"
-                  v-model="formTagName" @input="onTagNameInput" @keyup.enter="submitForm" />
+                <input
+                  v-model="formTagName"
+                  class="input"
+                  :class="formHelpClass"
+                  type="text"
+                  placeholder="Enter tag name"
+                  @input="onTagNameInput"
+                  @keyup.enter="submitForm"
+                />
                 <span class="icon is-left">
-                  <i class="fa-solid fa-tag"></i>
+                  <i class="fa-solid fa-tag" />
                 </span>
               </div>
-              <p v-if="formHelp" class="help" :class="formHelpClass">{{ formHelp }}</p>
+              <p v-if="formHelp" class="help" :class="formHelpClass">
+                {{ formHelp }}
+              </p>
             </div>
             <div class="field">
               <label class="label">Category</label>
@@ -507,7 +544,13 @@ onMounted(() => {
                 <div class="select is-fullwidth">
                   <select v-model="formCategoryId">
                     <option value="">Select a Category</option>
-                    <option v-for="cat in store.categories" :key="cat.category_id" :value="cat.category_id">{{ cat.category_name }}</option>
+                    <option
+                      v-for="cat in store.categories"
+                      :key="cat.category_id"
+                      :value="cat.category_id"
+                    >
+                      {{ cat.category_name }}
+                    </option>
                   </select>
                 </div>
               </div>
@@ -526,37 +569,59 @@ onMounted(() => {
 
       <!-- Migrate Tag Modal -->
       <div class="modal" :class="{ 'is-active': showMigrateModal }">
-        <div class="modal-background" @click="closeMigrateModal"></div>
+        <div class="modal-background" @click="closeMigrateModal" />
         <div class="modal-card">
           <header class="modal-card-head">
-            <p class="modal-card-title"><strong>Migrate Tag</strong></p>
-            <button class="delete" aria-label="close" @click="closeMigrateModal"></button>
+            <p class="modal-card-title">
+              <strong>Migrate Tag</strong>
+            </p>
+            <button class="delete" aria-label="close" @click="closeMigrateModal" />
           </header>
           <section class="modal-card-body">
             <p class="mb-4">
               Migrate all items tagged with
               <strong>{{ migrateSourceTag?.tag_name }}</strong>
-              to another tag. Items that already have the target tag will simply have the source tag removed.
+              to another tag. Items that already have the target tag will simply have the source tag
+              removed.
             </p>
             <div class="field">
               <label class="label">Target Tag</label>
               <div class="control">
-                <input class="input" type="text" v-model="migrateTargetSearch"
-                  placeholder="Search for target tag..." />
+                <input
+                  v-model="migrateTargetSearch"
+                  class="input"
+                  type="text"
+                  placeholder="Search for target tag..."
+                />
               </div>
               <div v-if="migrateTargetOptions.length > 0" class="dropdown-list">
-                <a v-for="t in migrateTargetOptions" :key="t.tag_id" class="dropdown-item"
-                  :class="{ 'is-active': migrateTargetId === t.tag_id }" @click="selectMigrateTarget(t)">
+                <a
+                  v-for="t in migrateTargetOptions"
+                  :key="t.tag_id"
+                  class="dropdown-item"
+                  :class="{ 'is-active': migrateTargetId === t.tag_id }"
+                  @click="selectMigrateTarget(t)"
+                >
                   <span :class="getTextClassByName(t.category_name)">{{ t.tag_name }}</span>
-                  <span class="tag is-small ml-2" :class="getCategoryClassByName(t.category_name)">{{ t.category_name }}</span>
+                  <span
+                    class="tag is-small ml-2"
+                    :class="getCategoryClassByName(t.category_name)"
+                    >{{ t.category_name }}</span
+                  >
                 </a>
               </div>
             </div>
-            <p v-if="migrateHelp" class="help" :class="migrateHelpClass">{{ migrateHelp }}</p>
+            <p v-if="migrateHelp" class="help" :class="migrateHelpClass">
+              {{ migrateHelp }}
+            </p>
           </section>
           <footer class="modal-card-foot">
             <div class="buttons">
-              <button class="button is-warning" :class="{ 'is-loading': migrateLoading }" @click="submitMigrate">
+              <button
+                class="button is-warning"
+                :class="{ 'is-loading': migrateLoading }"
+                @click="submitMigrate"
+              >
                 Migrate
               </button>
               <button class="button" @click="closeMigrateModal">Cancel</button>
@@ -567,43 +632,64 @@ onMounted(() => {
 
       <!-- Delete Tag Modal -->
       <div class="modal" :class="{ 'is-active': showDeleteModal }">
-        <div class="modal-background" @click="closeDeleteModal"></div>
+        <div class="modal-background" @click="closeDeleteModal" />
         <div class="modal-card">
           <header class="modal-card-head">
-            <p class="modal-card-title"><strong>Delete Tag</strong></p>
-            <button class="delete" aria-label="close" @click="closeDeleteModal"></button>
+            <p class="modal-card-title">
+              <strong>Delete Tag</strong>
+            </p>
+            <button class="delete" aria-label="close" @click="closeDeleteModal" />
           </header>
           <section class="modal-card-body">
             <p class="mb-4">
               Are you sure you want to delete
-              <strong>{{ deleteTargetTag?.tag_name }}</strong>?
-              This will remove the tag from all items.
+              <strong>{{ deleteTargetTag?.tag_name }}</strong
+              >? This will remove the tag from all items.
             </p>
             <div class="field">
               <label class="checkbox">
-                <input type="checkbox" v-model="deleteMigrateFirst" />
+                <input v-model="deleteMigrateFirst" type="checkbox" />
                 Migrate items to another tag before deleting
               </label>
             </div>
             <div v-if="deleteMigrateFirst" class="field">
               <label class="label">Migrate To</label>
               <div class="control">
-                <input class="input" type="text" v-model="deleteMigrateTargetSearch"
-                  placeholder="Search for target tag..." />
+                <input
+                  v-model="deleteMigrateTargetSearch"
+                  class="input"
+                  type="text"
+                  placeholder="Search for target tag..."
+                />
               </div>
               <div v-if="deleteMigrateTargetOptions.length > 0" class="dropdown-list">
-                <a v-for="t in deleteMigrateTargetOptions" :key="t.tag_id" class="dropdown-item"
-                  :class="{ 'is-active': deleteMigrateTargetId === t.tag_id }" @click="selectDeleteMigrateTarget(t)">
+                <a
+                  v-for="t in deleteMigrateTargetOptions"
+                  :key="t.tag_id"
+                  class="dropdown-item"
+                  :class="{ 'is-active': deleteMigrateTargetId === t.tag_id }"
+                  @click="selectDeleteMigrateTarget(t)"
+                >
                   <span :class="getTextClassByName(t.category_name)">{{ t.tag_name }}</span>
-                  <span class="tag is-small ml-2" :class="getCategoryClassByName(t.category_name)">{{ t.category_name }}</span>
+                  <span
+                    class="tag is-small ml-2"
+                    :class="getCategoryClassByName(t.category_name)"
+                    >{{ t.category_name }}</span
+                  >
                 </a>
               </div>
             </div>
-            <p v-if="deleteHelp" class="help" :class="deleteHelpClass">{{ deleteHelp }}</p>
+            <p v-if="deleteHelp" class="help" :class="deleteHelpClass">
+              {{ deleteHelp }}
+            </p>
           </section>
           <footer class="modal-card-foot">
             <div class="buttons">
-              <button class="button is-danger" :class="{ 'is-loading': deleteLoading }" @click="submitDelete">
+              <button
+                class="button is-danger"
+                :class="{ 'is-loading': deleteLoading }"
+                @click="submitDelete"
+              >
                 Delete
               </button>
               <button class="button" @click="closeDeleteModal">Cancel</button>

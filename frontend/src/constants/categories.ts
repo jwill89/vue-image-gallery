@@ -19,12 +19,29 @@ import { useGalleryStore, type TagCategory } from '../stores/gallery'
  */
 export const VALID_COLORS = [
   // Bulma built-in
-  'white', 'light', 'dark', 'primary', 'link', 'info', 'success', 'warning', 'danger',
+  'white',
+  'light',
+  'dark',
+  'primary',
+  'link',
+  'info',
+  'success',
+  'warning',
+  'danger',
   // Extended palette
-  'teal', 'purple', 'pink', 'orange', 'cyan', 'lime', 'indigo', 'rose', 'amber', 'emerald',
+  'teal',
+  'purple',
+  'pink',
+  'orange',
+  'cyan',
+  'lime',
+  'indigo',
+  'rose',
+  'amber',
+  'emerald',
 ] as const
 
-export type ValidColor = typeof VALID_COLORS[number]
+export type ValidColor = (typeof VALID_COLORS)[number]
 
 // ── Color → CSS class derivations ───────────────────────────
 
@@ -47,7 +64,7 @@ function findCategory(predicate: (c: TagCategory) => boolean): TagCategory | und
  * Get the tag class for a given category ID.
  */
 export function getCategoryClassById(categoryId: number): string {
-  const cat = findCategory(c => c.category_id === categoryId)
+  const cat = findCategory((c) => c.category_id === categoryId)
   return cat ? colorToTagClass(cat.color) : 'is-white'
 }
 
@@ -56,7 +73,7 @@ export function getCategoryClassById(categoryId: number): string {
  * default class (category_name can be null on tags whose category was removed).
  */
 export function getCategoryClassByName(categoryName: string | null | undefined): string {
-  const cat = findCategory(c => c.category_name === categoryName)
+  const cat = findCategory((c) => c.category_name === categoryName)
   return cat ? colorToTagClass(cat.color) : 'is-white'
 }
 
@@ -65,6 +82,6 @@ export function getCategoryClassByName(categoryName: string | null | undefined):
  * default class.
  */
 export function getTextClassByName(categoryName: string | null | undefined): string {
-  const cat = findCategory(c => c.category_name === categoryName)
+  const cat = findCategory((c) => c.category_name === categoryName)
   return cat ? colorToTextClass(cat.color) : 'has-text-white'
 }

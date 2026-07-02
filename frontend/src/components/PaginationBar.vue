@@ -24,8 +24,15 @@ function go(page: number) {
 
 <template>
   <nav class="pagination is-centered" role="navigation" aria-label="pagination">
-    <a class="pagination-previous" :class="{ 'is-disabled': !hasPrevious }" @click.prevent="go(previousPage)">Previous</a>
-    <a class="pagination-next" :class="{ 'is-disabled': !hasNext }" @click.prevent="go(nextPage)">Next</a>
+    <a
+      class="pagination-previous"
+      :class="{ 'is-disabled': !hasPrevious }"
+      @click.prevent="go(previousPage)"
+      >Previous</a
+    >
+    <a class="pagination-next" :class="{ 'is-disabled': !hasNext }" @click.prevent="go(nextPage)"
+      >Next</a
+    >
     <ul class="pagination-list">
       <!-- First page + ellipsis -->
       <li v-if="currentPage >= 3">

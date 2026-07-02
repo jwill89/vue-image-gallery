@@ -38,10 +38,14 @@ Serve `backend/` with Apache + `mod_rewrite` (it is the app root). At minimum se
 **Frontend** (run from `frontend/`):
 
 ```bash
+git submodule update --init --recursive   # fetch frontend/eslint-config (shared lint config)
 cd frontend
 npm install
 npm run dev             # Vite dev server on :5173, proxies /api and /media to http://localhost
 ```
+
+> Clone with `git clone --recurse-submodules …` to fetch the submodule up front. Without the
+> submodule checked out, `npm install` fails (it resolves `@jwill89/eslint-config` from `file:eslint-config`).
 
 ## Coding standards
 
@@ -70,8 +74,21 @@ composer docs           # regenerate backend/openapi.json — CI fails if it dri
 
 ```bash
 cd frontend
+npm run lint            # ESLint (type-checked): must report 0 errors
+npm run lint:fix        # auto-fix what it can
+npm run format          # Prettier: format the frontend
+npm run format:check    # Prettier: verify formatting (CI gate)
 npm run build           # vue-tsc type-check + vite build; must succeed with no type errors
 ```
+
+The lint rules and Prettier config are shared across projects via the
+**[@jwill89/eslint-config](https://github.com/jwill89/eslint-config)** git submodule at
+`frontend/eslint-config` (Vue + TypeScript **strictTypeChecked**). `eslint.config.ts` and
+`prettier.config.js` just re-export it. Change rules **in the submodule** (commit + push there,
+then bump the submodule pointer here) — not in the consuming project. Conventions it enforces:
+prefer `catch (e)` (typed `unknown`) with the `getErrorMessage`/`getErrorStatus`/`getErrorCode`
+helpers from `composables/useApi.ts` over `catch (e: any)`; `void`-prefix intentional
+fire-and-forget promises (`void router.push(...)`); prefix genuinely-unused vars/args with `_`.
 
 Route API calls through `composables/useApi.ts` (never raw `fetch`) using the paths in
 `src/api/endpoints.ts`. Domain types are **generated from the OpenAPI spec** — after a

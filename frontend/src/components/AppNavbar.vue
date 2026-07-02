@@ -27,7 +27,12 @@ const isMediaActive = computed(() => {
 })
 const isTagsActive = computed(() => {
   const name = route.name as string
-  return name === 'tags' || name === 'tag-categories' || name === 'danbooru-rules' || name === 'tag-implications'
+  return (
+    name === 'tags' ||
+    name === 'tag-categories' ||
+    name === 'danbooru-rules' ||
+    name === 'tag-implications'
+  )
 })
 const isUploadActive = computed(() => route.name === 'upload')
 const isFavoritesActive = computed(() => route.name === 'favorites')
@@ -36,31 +41,31 @@ const isLoginActive = computed(() => route.name === 'login')
 
 function navigateMedia() {
   selectedTags.value = []
-  router.push({ name: 'media', params: { page: 1, perPage: perPage.value } })
+  void router.push({ name: 'media', params: { page: 1, perPage: perPage.value } })
   burgerActive.value = false
 }
 
 function navigateTags() {
   selectedTags.value = []
-  router.push({ name: 'tags' })
+  void router.push({ name: 'tags' })
   burgerActive.value = false
 }
 
 function navigateFavorites() {
   selectedTags.value = []
-  router.push({ name: 'favorites' })
+  void router.push({ name: 'favorites' })
   burgerActive.value = false
 }
 
 function navigateUpload() {
   selectedTags.value = []
-  router.push({ name: 'upload' })
+  void router.push({ name: 'upload' })
   burgerActive.value = false
 }
 
 function navigateDupes() {
   selectedTags.value = []
-  router.push({ name: 'duplicates' })
+  void router.push({ name: 'duplicates' })
   burgerActive.value = false
 }
 
@@ -75,14 +80,14 @@ async function navigateRandom() {
 
     // Clear gallery context so arrow keys are disabled for random access
     store.lastViewedItemIds = []
-    router.push({ name: 'media-tags', params: { id: item.media_id } })
+    void router.push({ name: 'media-tags', params: { id: item.media_id } })
   } catch {
     toastStore.error('Could not load a random media item. Please try again.', 6000, 'Random Failed')
   }
 }
 
 function navigateLogin() {
-  router.push({ name: 'login' })
+  void router.push({ name: 'login' })
   burgerActive.value = false
 }
 
@@ -94,22 +99,22 @@ function logout() {
 
 function searchWithTags() {
   if (selectedTags.value.length === 0) return
-  router.push({
+  void router.push({
     name: 'media-with-tags',
-    params: { page: 1, perPage: perPage.value, tags: selectedTags.value.join(',') }
+    params: { page: 1, perPage: perPage.value, tags: selectedTags.value.join(',') },
   })
 }
 
 function resetSearch() {
   selectedTags.value = []
-  router.push({ name: 'media', params: { page: 1, perPage: perPage.value } })
+  void router.push({ name: 'media', params: { page: 1, perPage: perPage.value } })
 }
 
 function searchUntagged() {
   selectedTags.value = []
-  router.push({
+  void router.push({
     name: 'media-with-tags',
-    params: { page: 1, perPage: perPage.value, tags: 'untagged' }
+    params: { page: 1, perPage: perPage.value, tags: 'untagged' },
   })
   burgerActive.value = false
 }
@@ -120,17 +125,17 @@ const isUntaggedActive = computed(() => {
 
 function onPerPageChange() {
   if (isUntaggedActive.value) {
-    router.push({
+    void router.push({
       name: 'media-with-tags',
-      params: { page: 1, perPage: perPage.value, tags: 'untagged' }
+      params: { page: 1, perPage: perPage.value, tags: 'untagged' },
     })
   } else if (selectedTags.value.length > 0) {
-    router.push({
+    void router.push({
       name: 'media-with-tags',
-      params: { page: 1, perPage: perPage.value, tags: selectedTags.value.join(',') }
+      params: { page: 1, perPage: perPage.value, tags: selectedTags.value.join(',') },
     })
   } else {
-    router.push({ name: 'media', params: { page: 1, perPage: perPage.value } })
+    void router.push({ name: 'media', params: { page: 1, perPage: perPage.value } })
   }
 }
 
@@ -139,7 +144,10 @@ router.afterEach((to) => {
   authenticated.value = hasAuthToken()
   if (to.params.tags && to.params.tags !== 'untagged') {
     const tagsParam = to.params.tags as string
-    selectedTags.value = tagsParam.split(',').map(t => t.trim()).filter(Boolean)
+    selectedTags.value = tagsParam
+      .split(',')
+      .map((t) => t.trim())
+      .filter(Boolean)
   } else if (!to.name?.toString().includes('with-tags') || to.params.tags === 'untagged') {
     selectedTags.value = []
   }
@@ -151,14 +159,24 @@ router.afterEach((to) => {
 </script>
 
 <template>
-  <nav class="navbar has-background-black-ter is-fixed-top" role="navigation" aria-label="main-menu">
+  <nav
+    class="navbar has-background-black-ter is-fixed-top"
+    role="navigation"
+    aria-label="main-menu"
+  >
     <div class="navbar-brand">
-      <a role="button" class="navbar-burger" :class="{ 'is-active': burgerActive }" aria-label="menu"
-        :aria-expanded="burgerActive" @click="burgerActive = !burgerActive">
-        <span aria-hidden="true"></span>
-        <span aria-hidden="true"></span>
-        <span aria-hidden="true"></span>
-        <span aria-hidden="true"></span>
+      <a
+        role="button"
+        class="navbar-burger"
+        :class="{ 'is-active': burgerActive }"
+        aria-label="menu"
+        :aria-expanded="burgerActive"
+        @click="burgerActive = !burgerActive"
+      >
+        <span aria-hidden="true" />
+        <span aria-hidden="true" />
+        <span aria-hidden="true" />
+        <span aria-hidden="true" />
       </a>
     </div>
 
@@ -166,37 +184,43 @@ router.afterEach((to) => {
       <div class="navbar-start">
         <!-- Media -->
         <a class="navbar-item" :class="{ 'is-selected': isMediaActive }" @click="navigateMedia">
-          <span class="icon"><i class="fa-solid fa-images"></i></span>
+          <span class="icon"><i class="fa-solid fa-images" /></span>
           <span>Media</span>
         </a>
 
         <!-- Random -->
         <a class="navbar-item" @click="navigateRandom">
-          <span class="icon"><i class="fa-solid fa-shuffle"></i></span>
+          <span class="icon"><i class="fa-solid fa-shuffle" /></span>
           <span>Random</span>
         </a>
 
         <!-- Tags -->
         <a class="navbar-item" :class="{ 'is-selected': isTagsActive }" @click="navigateTags">
-          <span class="icon"><i class="fa-solid fa-tags"></i></span>
+          <span class="icon"><i class="fa-solid fa-tags" /></span>
           <span>Tags</span>
         </a>
 
         <!-- Favorites -->
-        <a class="navbar-item" :class="{ 'is-selected': isFavoritesActive }" @click="navigateFavorites">
-          <span class="icon"><i class="fa-solid fa-heart"></i></span>
+        <a
+          class="navbar-item"
+          :class="{ 'is-selected': isFavoritesActive }"
+          @click="navigateFavorites"
+        >
+          <span class="icon"><i class="fa-solid fa-heart" /></span>
           <span>Favorites</span>
-          <span v-if="favorites.count > 0" class="tag is-rounded is-small ml-1">{{ favorites.count }}</span>
+          <span v-if="favorites.count > 0" class="tag is-rounded is-small ml-1">{{
+            favorites.count
+          }}</span>
         </a>
 
         <!-- Admin items -->
         <template v-if="authenticated">
           <a class="navbar-item" :class="{ 'is-selected': isUploadActive }" @click="navigateUpload">
-            <span class="icon"><i class="fa-solid fa-cloud-arrow-up"></i></span>
+            <span class="icon"><i class="fa-solid fa-cloud-arrow-up" /></span>
             <span>Upload</span>
           </a>
           <a class="navbar-item" :class="{ 'is-selected': isDupesActive }" @click="navigateDupes">
-            <span class="icon"><i class="fa-solid fa-clone"></i></span>
+            <span class="icon"><i class="fa-solid fa-clone" /></span>
             <span>Duplicates</span>
           </a>
         </template>
@@ -204,7 +228,11 @@ router.afterEach((to) => {
 
       <div class="navbar-end">
         <div class="navbar-item">
-          <button class="button" :class="{ 'is-success': store.blurThumbnails }" @click="store.toggleBlur">
+          <button
+            class="button"
+            :class="{ 'is-success': store.blurThumbnails }"
+            @click="store.toggleBlur"
+          >
             Blur: {{ store.blurThumbnails ? 'On' : 'Off' }}
           </button>
         </div>
@@ -223,7 +251,7 @@ router.afterEach((to) => {
                 </select>
               </div>
               <div class="icon is-left">
-                <i class="fa-solid fa-table"></i>
+                <i class="fa-solid fa-table" />
               </div>
             </div>
           </div>
@@ -245,7 +273,7 @@ router.afterEach((to) => {
                 title="Show untagged media"
                 @click="searchUntagged"
               >
-                <span class="icon"><i class="fa-solid fa-ban"></i></span>
+                <span class="icon"><i class="fa-solid fa-ban" /></span>
               </button>
             </div>
           </div>
@@ -253,11 +281,16 @@ router.afterEach((to) => {
 
         <div class="navbar-item">
           <button v-if="authenticated" class="button is-danger is-outlined" @click="logout">
-            <span class="icon"><i class="fa-solid fa-right-from-bracket"></i></span>
+            <span class="icon"><i class="fa-solid fa-right-from-bracket" /></span>
             <span>Logout</span>
           </button>
-          <button v-else class="button is-primary is-outlined" :class="{ 'is-selected': isLoginActive }" @click="navigateLogin">
-            <span class="icon"><i class="fa-solid fa-right-to-bracket"></i></span>
+          <button
+            v-else
+            class="button is-primary is-outlined"
+            :class="{ 'is-selected': isLoginActive }"
+            @click="navigateLogin"
+          >
+            <span class="icon"><i class="fa-solid fa-right-to-bracket" /></span>
             <span>Admin Login</span>
           </button>
         </div>

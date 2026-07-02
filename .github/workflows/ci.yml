@@ -65,6 +65,8 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive # frontend/eslint-config (shared @jwill89/eslint-config)
 
       - name: Set up Node
         uses: actions/setup-node@v4
@@ -80,6 +82,12 @@ jobs:
         run: |
           npm run gen:types
           git diff --exit-code src/types/api.generated.ts
+
+      - name: Lint (ESLint, type-checked)
+        run: npm run lint
+
+      - name: Check formatting (Prettier)
+        run: npm run format:check
 
       - name: Type-check & build
         run: npm run build

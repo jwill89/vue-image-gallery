@@ -21,14 +21,18 @@ const iconMap: Record<string, string> = {
         :class="`toast-${toast.type}`"
       >
         <div class="toast-icon">
-          <i :class="iconMap[toast.type]"></i>
+          <i :class="iconMap[toast.type]" />
         </div>
         <div class="toast-body">
-          <div class="toast-title">{{ toast.title }}</div>
-          <div class="toast-message">{{ toast.message }}</div>
+          <div class="toast-title">
+            {{ toast.title }}
+          </div>
+          <div class="toast-message">
+            {{ toast.message }}
+          </div>
         </div>
-        <button class="toast-close" @click="toastStore.remove(toast.id)" aria-label="Dismiss">
-          <i class="fa-solid fa-xmark"></i>
+        <button class="toast-close" aria-label="Dismiss" @click="toastStore.remove(toast.id)">
+          <i class="fa-solid fa-xmark" />
         </button>
       </div>
     </transition-group>
@@ -134,7 +138,9 @@ const iconMap: Record<string, string> = {
   font-size: 0.85rem;
   line-height: 1;
   border-radius: 4px;
-  transition: color 0.15s, background 0.15s;
+  transition:
+    color 0.15s,
+    background 0.15s;
   margin-top: 1px;
 }
 

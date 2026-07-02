@@ -12,17 +12,19 @@ const authError = ref<string | null>(null)
 const authLoading = ref(false)
 
 if (hasAuthToken()) {
-  router.replace('/')
+  void router.replace('/')
 }
 
 async function login() {
   authLoading.value = true
   authError.value = null
   try {
-    const result = await api.post<LoginResponse>(endpoints.auth.login, { password: passwordInput.value })
+    const result = await api.post<LoginResponse>(endpoints.auth.login, {
+      password: passwordInput.value,
+    })
     setAuthToken(result.token)
     passwordInput.value = ''
-    router.replace('/')
+    void router.replace('/')
   } catch {
     authError.value = 'Invalid password'
   } finally {
@@ -42,20 +44,26 @@ async function login() {
               <label class="label">Password</label>
               <div class="control has-icons-left">
                 <input
+                  v-model="passwordInput"
                   class="input"
                   type="password"
-                  v-model="passwordInput"
                   placeholder="Enter admin password"
-                  @keyup.enter="login"
                   autofocus
+                  @keyup.enter="login"
                 />
                 <span class="icon is-left">
-                  <i class="fa-solid fa-lock"></i>
+                  <i class="fa-solid fa-lock" />
                 </span>
               </div>
-              <p v-if="authError" class="help is-danger">{{ authError }}</p>
+              <p v-if="authError" class="help is-danger">
+                {{ authError }}
+              </p>
             </div>
-            <button class="button is-primary is-fullwidth" :class="{ 'is-loading': authLoading }" @click="login">
+            <button
+              class="button is-primary is-fullwidth"
+              :class="{ 'is-loading': authLoading }"
+              @click="login"
+            >
               Login
             </button>
           </div>

@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { useApi } from './useApi'
+import { useApi, getErrorMessage } from './useApi'
 import { useToastStore } from '../stores/toast'
 import { endpoints } from '../api/endpoints'
 import type { Media, MediaPage } from '../types'
@@ -18,16 +18,18 @@ export function useGalleryData() {
 
     try {
       const url =
-        tags === 'untagged' ? endpoints.media.untagged(page, perPage)
-        : tags ? endpoints.media.withTags(tags, page, perPage)
-        : endpoints.media.page(page, perPage)
+        tags === 'untagged'
+          ? endpoints.media.untagged(page, perPage)
+          : tags
+            ? endpoints.media.withTags(tags, page, perPage)
+            : endpoints.media.page(page, perPage)
 
       const data = await api.get<MediaPage>(url)
 
       items.value = data?.items ?? []
       totalPages.value = data?.total_pages ?? 1
-    } catch (e: any) {
-      toastStore.error(e.message || 'Failed to load gallery')
+    } catch (e) {
+      toastStore.error(getErrorMessage(e, 'Failed to load gallery'))
       loadFailed.value = true
       items.value = []
       totalPages.value = 0

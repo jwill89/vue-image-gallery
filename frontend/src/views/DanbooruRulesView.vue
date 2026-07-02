@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue'
-import { useApi, hasAuthToken } from '../composables/useApi'
+import { useApi, getErrorMessage, hasAuthToken } from '../composables/useApi'
 import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
 import { endpoints } from '../api/endpoints'
@@ -50,8 +50,8 @@ async function loadRules() {
   loadFailed.value = false
   try {
     await Promise.all([loadCategoryMappings(), loadTagMappings()])
-  } catch (e: any) {
-    toastStore.error(e.message || 'Failed to load Danbooru rules.')
+  } catch (e) {
+    toastStore.error(getErrorMessage(e, 'Failed to load Danbooru rules.'))
     loadFailed.value = true
   } finally {
     loading.value = false
@@ -97,8 +97,8 @@ async function submitCatMapping() {
     await loadCategoryMappings()
     showCatModal.value = false
     toastStore.success('Category mapping saved.')
-  } catch (e: any) {
-    catHelp.value = e.message || 'Error saving mapping.'
+  } catch (e) {
+    catHelp.value = getErrorMessage(e, 'Error saving mapping.')
     catHelpClass.value = 'is-danger'
   } finally {
     catLoading.value = false
@@ -111,8 +111,8 @@ async function deleteCatMapping(danbooruCategoryId: number) {
     await api.del(endpoints.danbooru.categoryMapping(danbooruCategoryId))
     await loadCategoryMappings()
     toastStore.success('Category mapping removed.')
-  } catch (e: any) {
-    toastStore.error(e.message || 'Could not remove mapping.')
+  } catch (e) {
+    toastStore.error(getErrorMessage(e, 'Could not remove mapping.'))
   }
 }
 
@@ -166,8 +166,8 @@ async function submitTagMapping() {
     await loadTagMappings()
     showTagModal.value = false
     toastStore.success(tagFormMode.value === 'edit' ? 'Tag mapping updated.' : 'Tag mapping added.')
-  } catch (e: any) {
-    tagHelp.value = e.message || 'Error saving tag mapping.'
+  } catch (e) {
+    tagHelp.value = getErrorMessage(e, 'Error saving tag mapping.')
     tagHelpClass.value = 'is-danger'
   } finally {
     tagLoading.value = false
@@ -180,8 +180,8 @@ async function deleteTagMapping(id: number) {
     await api.del(endpoints.danbooru.tagMapping(id))
     await loadTagMappings()
     toastStore.success('Tag mapping removed.')
-  } catch (e: any) {
-    toastStore.error(e.message || 'Could not remove mapping.')
+  } catch (e) {
+    toastStore.error(getErrorMessage(e, 'Could not remove mapping.'))
   }
 }
 
@@ -195,11 +195,11 @@ onMounted(loadRules)
 
       <div v-else-if="loadFailed" class="has-text-centered py-6">
         <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-file-import fa-3x"></i>
+          <i class="fa-solid fa-file-import fa-3x" />
         </span>
         <p class="is-size-5 has-text-grey mt-4">Could not load Danbooru import rules.</p>
         <button class="button is-indigo mt-4" @click="loadRules">
-          <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
+          <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
           <span>Retry</span>
         </button>
       </div>
@@ -217,20 +217,21 @@ onMounted(loadRules)
         <p class="mb-5 has-text-grey">
           Configure how tags are imported from Danbooru. Category mappings control which Danbooru
           category maps to which gallery category. Tag name mappings rename specific Danbooru tags
-          to more readable gallery names (unmapped tags have underscores replaced with spaces automatically).
+          to more readable gallery names (unmapped tags have underscores replaced with spaces
+          automatically).
         </p>
 
         <!-- ═══════ Category Mappings ═══════ -->
         <div class="level mb-3">
           <div class="level-left">
             <h2 class="title is-5 mb-0">
-              <span class="icon"><i class="fa-solid fa-layer-group"></i></span>
+              <span class="icon"><i class="fa-solid fa-layer-group" /></span>
               <span>Category Mappings</span>
             </h2>
           </div>
-          <div class="level-right" v-if="authenticated">
+          <div v-if="authenticated" class="level-right">
             <button class="button is-primary is-small" @click="openCatModal">
-              <span class="icon"><i class="fa-solid fa-plus"></i></span>
+              <span class="icon"><i class="fa-solid fa-plus" /></span>
               <span>Add Mapping</span>
             </button>
           </div>
@@ -241,29 +242,42 @@ onMounted(loadRules)
             <tr>
               <th>Danbooru ID</th>
               <th>Danbooru Category</th>
-              <th></th>
+              <th />
               <th>Gallery Category</th>
-              <th v-if="authenticated" style="width:80px">Actions</th>
+              <th v-if="authenticated" style="width: 80px">Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="m in categoryMappings" :key="m.danbooru_category_id">
-              <td><code>{{ m.danbooru_category_id }}</code></td>
+              <td>
+                <code>{{ m.danbooru_category_id }}</code>
+              </td>
               <td>{{ m.danbooru_category_name }}</td>
               <td class="has-text-centered has-text-grey">
-                <i class="fa-solid fa-arrow-right"></i>
+                <i class="fa-solid fa-arrow-right" />
               </td>
               <td>
-                <span v-if="m.gallery_category_name" class="tag is-medium"
-                  :class="colorToTagClass(store.categories.find(c => c.category_id === m.gallery_category_id)?.color || 'white')">
+                <span
+                  v-if="m.gallery_category_name"
+                  class="tag is-medium"
+                  :class="
+                    colorToTagClass(
+                      store.categories.find((c) => c.category_id === m.gallery_category_id)
+                        ?.color || 'white',
+                    )
+                  "
+                >
                   {{ m.gallery_category_name }}
                 </span>
                 <span v-else class="has-text-danger">Missing (ID {{ m.gallery_category_id }})</span>
               </td>
               <td v-if="authenticated">
-                <button class="button is-small is-danger is-outlined"
-                  @click="deleteCatMapping(m.danbooru_category_id)" title="Remove">
-                  <span class="icon"><i class="fa-solid fa-trash"></i></span>
+                <button
+                  class="button is-small is-danger is-outlined"
+                  title="Remove"
+                  @click="deleteCatMapping(m.danbooru_category_id)"
+                >
+                  <span class="icon"><i class="fa-solid fa-trash" /></span>
                 </button>
               </td>
             </tr>
@@ -281,13 +295,13 @@ onMounted(loadRules)
         <div class="level mb-3">
           <div class="level-left">
             <h2 class="title is-5 mb-0">
-              <span class="icon"><i class="fa-solid fa-right-left"></i></span>
+              <span class="icon"><i class="fa-solid fa-right-left" /></span>
               <span>Tag Name Mappings</span>
             </h2>
           </div>
-          <div class="level-right" v-if="authenticated">
+          <div v-if="authenticated" class="level-right">
             <button class="button is-primary is-small" @click="openNewTagMapping">
-              <span class="icon"><i class="fa-solid fa-plus"></i></span>
+              <span class="icon"><i class="fa-solid fa-plus" /></span>
               <span>Add Mapping</span>
             </button>
           </div>
@@ -297,32 +311,43 @@ onMounted(loadRules)
           <thead>
             <tr>
               <th>Danbooru Tag</th>
-              <th></th>
+              <th />
               <th>Gallery Tag</th>
-              <th v-if="authenticated" style="width:120px">Actions</th>
+              <th v-if="authenticated" style="width: 120px">Actions</th>
             </tr>
           </thead>
           <tbody>
             <tr v-for="m in tagMappings" :key="m.id">
-              <td><code>{{ m.danbooru_tag }}</code></td>
+              <td>
+                <code>{{ m.danbooru_tag }}</code>
+              </td>
               <td class="has-text-centered has-text-grey">
-                <i class="fa-solid fa-arrow-right"></i>
+                <i class="fa-solid fa-arrow-right" />
               </td>
               <td>{{ m.gallery_tag }}</td>
               <td v-if="authenticated">
                 <div class="buttons are-small">
-                  <button class="button is-cyan is-outlined" @click="openEditTagMapping(m)" title="Edit">
-                    <span class="icon"><i class="fa-solid fa-pen"></i></span>
+                  <button
+                    class="button is-cyan is-outlined"
+                    title="Edit"
+                    @click="openEditTagMapping(m)"
+                  >
+                    <span class="icon"><i class="fa-solid fa-pen" /></span>
                   </button>
-                  <button class="button is-danger is-outlined" @click="deleteTagMapping(m.id)" title="Remove">
-                    <span class="icon"><i class="fa-solid fa-trash"></i></span>
+                  <button
+                    class="button is-danger is-outlined"
+                    title="Remove"
+                    @click="deleteTagMapping(m.id)"
+                  >
+                    <span class="icon"><i class="fa-solid fa-trash" /></span>
                   </button>
                 </div>
               </td>
             </tr>
             <tr v-if="tagMappings.length === 0">
               <td :colspan="authenticated ? 4 : 3" class="has-text-centered has-text-grey">
-                No tag name mappings configured. Danbooru tags will be imported with underscores replaced by spaces.
+                No tag name mappings configured. Danbooru tags will be imported with underscores
+                replaced by spaces.
               </td>
             </tr>
           </tbody>
@@ -331,26 +356,40 @@ onMounted(loadRules)
 
       <!-- Add Category Mapping Modal -->
       <div class="modal" :class="{ 'is-active': showCatModal }">
-        <div class="modal-background" @click="showCatModal = false"></div>
+        <div class="modal-background" @click="showCatModal = false" />
         <div class="modal-card">
           <header class="modal-card-head">
-            <p class="modal-card-title"><strong>Add Category Mapping</strong></p>
-            <button class="delete" aria-label="close" @click="showCatModal = false"></button>
+            <p class="modal-card-title">
+              <strong>Add Category Mapping</strong>
+            </p>
+            <button class="delete" aria-label="close" @click="showCatModal = false" />
           </header>
           <section class="modal-card-body">
             <div class="field">
               <label class="label">Danbooru Category ID</label>
               <div class="control">
-                <input class="input" type="number" min="0" v-model="catDanbooruId"
-                  placeholder="e.g. 0" />
+                <input
+                  v-model="catDanbooruId"
+                  class="input"
+                  type="number"
+                  min="0"
+                  placeholder="e.g. 0"
+                />
               </div>
-              <p class="help">The numeric category ID used by the Danbooru API (0=General, 1=Artist, 3=Copyright, 4=Character, 5=Meta).</p>
+              <p class="help">
+                The numeric category ID used by the Danbooru API (0=General, 1=Artist, 3=Copyright,
+                4=Character, 5=Meta).
+              </p>
             </div>
             <div class="field">
               <label class="label">Danbooru Category Name</label>
               <div class="control">
-                <input class="input" type="text" v-model="catDanbooruName"
-                  placeholder="e.g. General" />
+                <input
+                  v-model="catDanbooruName"
+                  class="input"
+                  type="text"
+                  placeholder="e.g. General"
+                />
               </div>
               <p class="help">A label for this mapping (for your reference only).</p>
             </div>
@@ -360,18 +399,28 @@ onMounted(loadRules)
                 <div class="select is-fullwidth">
                   <select v-model="catGalleryCategoryId">
                     <option value="">Select a category</option>
-                    <option v-for="cat in store.categories" :key="cat.category_id" :value="cat.category_id">
+                    <option
+                      v-for="cat in store.categories"
+                      :key="cat.category_id"
+                      :value="cat.category_id"
+                    >
                       {{ cat.category_name }}
                     </option>
                   </select>
                 </div>
               </div>
             </div>
-            <p v-if="catHelp" class="help" :class="catHelpClass">{{ catHelp }}</p>
+            <p v-if="catHelp" class="help" :class="catHelpClass">
+              {{ catHelp }}
+            </p>
           </section>
           <footer class="modal-card-foot">
             <div class="buttons">
-              <button class="button is-primary" :class="{ 'is-loading': catLoading }" @click="submitCatMapping">
+              <button
+                class="button is-primary"
+                :class="{ 'is-loading': catLoading }"
+                @click="submitCatMapping"
+              >
                 Save Mapping
               </button>
               <button class="button" @click="showCatModal = false">Cancel</button>
@@ -382,36 +431,52 @@ onMounted(loadRules)
 
       <!-- Add/Edit Tag Name Mapping Modal -->
       <div class="modal" :class="{ 'is-active': showTagModal }">
-        <div class="modal-background" @click="showTagModal = false"></div>
+        <div class="modal-background" @click="showTagModal = false" />
         <div class="modal-card">
           <header class="modal-card-head">
             <p class="modal-card-title">
               <strong>{{ tagFormMode === 'edit' ? 'Edit Tag Mapping' : 'Add Tag Mapping' }}</strong>
             </p>
-            <button class="delete" aria-label="close" @click="showTagModal = false"></button>
+            <button class="delete" aria-label="close" @click="showTagModal = false" />
           </header>
           <section class="modal-card-body">
             <div class="field">
               <label class="label">Danbooru Tag</label>
               <div class="control">
-                <input class="input" type="text" v-model="tagDanbooru"
-                  placeholder="e.g. 1girl" @keyup.enter="submitTagMapping" />
+                <input
+                  v-model="tagDanbooru"
+                  class="input"
+                  type="text"
+                  placeholder="e.g. 1girl"
+                  @keyup.enter="submitTagMapping"
+                />
               </div>
               <p class="help">The exact tag name as it appears on Danbooru.</p>
             </div>
             <div class="field">
               <label class="label">Gallery Tag</label>
               <div class="control">
-                <input class="input" type="text" v-model="tagGallery"
-                  placeholder="e.g. one woman" @keyup.enter="submitTagMapping" />
+                <input
+                  v-model="tagGallery"
+                  class="input"
+                  type="text"
+                  placeholder="e.g. one woman"
+                  @keyup.enter="submitTagMapping"
+                />
               </div>
               <p class="help">The name this tag should appear as in your gallery.</p>
             </div>
-            <p v-if="tagHelp" class="help" :class="tagHelpClass">{{ tagHelp }}</p>
+            <p v-if="tagHelp" class="help" :class="tagHelpClass">
+              {{ tagHelp }}
+            </p>
           </section>
           <footer class="modal-card-foot">
             <div class="buttons">
-              <button class="button is-primary" :class="{ 'is-loading': tagLoading }" @click="submitTagMapping">
+              <button
+                class="button is-primary"
+                :class="{ 'is-loading': tagLoading }"
+                @click="submitTagMapping"
+              >
                 {{ tagFormMode === 'edit' ? 'Save Changes' : 'Add Mapping' }}
               </button>
               <button class="button" @click="showTagModal = false">Cancel</button>

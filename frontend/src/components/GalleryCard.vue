@@ -45,16 +45,16 @@ function toggleFavorite(e: Event) {
         />
         <!-- Animated badge (videos and GIFs) -->
         <span v-if="isAnimated" class="gallery-card-badge">
-          <i :class="item.media_type === 'video' ? 'fa-solid fa-film' : 'fa-solid fa-play'"></i>
+          <i :class="item.media_type === 'video' ? 'fa-solid fa-film' : 'fa-solid fa-play'" />
         </span>
         <!-- Favorite heart -->
         <button
           class="gallery-card-heart"
           :class="{ 'is-favorited': isFav }"
-          @click="toggleFavorite"
           :title="isFav ? 'Remove from favorites' : 'Add to favorites'"
+          @click="toggleFavorite"
         >
-          <i :class="isFav ? 'fa-solid fa-heart' : 'fa-regular fa-heart'"></i>
+          <i :class="isFav ? 'fa-solid fa-heart' : 'fa-regular fa-heart'" />
         </button>
       </div>
     </div>
@@ -124,7 +124,10 @@ function toggleFavorite(e: Event) {
   border-radius: 4px;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.15s, color 0.15s, transform 0.15s;
+  transition:
+    opacity 0.15s,
+    color 0.15s,
+    transform 0.15s;
   line-height: 1;
 }
 

@@ -355,6 +355,11 @@ which is fine given the token's entropy.
   `undefined`. Don't call `fetch` directly in components.
 - **Types are generated** from the OpenAPI spec into `types/api.generated.ts` (`npm run gen:types`);
   import domain types from `types/index.ts` (friendly `Required<>` aliases), never the generated file.
+- **Lint + format are shared** via the `@jwill89/eslint-config` git submodule at `frontend/eslint-config`
+  (Vue + TS **strictTypeChecked** + Prettier); `eslint.config.ts` / `prettier.config.js` re-export it.
+  Run `git submodule update --init` after cloning. Change rules in the submodule, not here. Idioms:
+  `void` fire-and-forget promises (`void router.push(...)`); `catch (e)` + the `getError*` helpers in
+  `useApi.ts`; `_`-prefix unused vars.
 - **Data-fetching composables**: `useGalleryData` (paginated lists), `useMediaTags` (detail + tag
   add/remove). Reuse them rather than re-implementing fetch logic.
 - **Routing**: lazy-loaded views in `router/index.ts`; page title from `meta.title`. `perPage=0`
@@ -400,8 +405,10 @@ which is fine given the token's entropy.
   `php-ffmpeg/php-ffmpeg` was removed from `composer.json` — thumbnails shell out to `ffmpeg` directly.)
 - **CI runs lint, static analysis, tests, and build.** GitHub Actions (`.github/workflows/ci.yml`)
   runs `composer lint` (phpcs / PSR-12) + `composer analyse` (PHPStan level 8) + `composer test`
-  (PHPUnit 13) on the backend, and `npm run build` (vue-tsc + Vite) + `npm run test` (Vitest) on the
-  frontend, with coverage reported (no hard gate). It also **fails if the committed contract is stale**:
+  (PHPUnit 13) on the backend, and `npm run lint` (ESLint, type-checked) + `npm run format:check`
+  (Prettier) + `npm run build` (vue-tsc + Vite) + `npm run test` (Vitest) on the frontend, with
+  coverage reported (no hard gate). The frontend CI job checks out submodules (see below). It also
+  **fails if the committed contract is stale**:
   `composer docs` + `git diff --exit-code openapi.json` (backend) and `npm run gen:types` +
   `git diff --exit-code src/types/api.generated.ts` (frontend). Backend tests build a fresh in-memory SQLite DB from
   `backend/tests/Support/schema.sql` and pass it to Storage/Collection constructors (the app

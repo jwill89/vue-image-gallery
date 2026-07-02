@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { useApi } from '../composables/useApi'
+import { useApi, getErrorMessage } from '../composables/useApi'
 import { useFavoritesStore } from '../stores/favorites'
 import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
@@ -37,13 +37,13 @@ async function loadFavorites() {
     items.value = result ?? []
 
     // Prune favorites that no longer exist in the database
-    const validIds = new Set(items.value.map(i => i.media_id))
+    const validIds = new Set(items.value.map((i) => i.media_id))
     favorites.prune(validIds)
 
     // Update gallery context for arrow-key navigation
-    store.lastViewedItemIds = items.value.map(i => i.media_id)
-  } catch (e: any) {
-    toastStore.error(e.message || 'Failed to load favorites.', 6000, 'Load Failed')
+    store.lastViewedItemIds = items.value.map((i) => i.media_id)
+  } catch (e) {
+    toastStore.error(getErrorMessage(e, 'Failed to load favorites.'), 6000, 'Load Failed')
     loadFailed.value = true
   } finally {
     loading.value = false
@@ -51,7 +51,7 @@ async function loadFavorites() {
 }
 
 function onCardClick(id: number) {
-  router.push({ name: 'media-tags', params: { id } })
+  void router.push({ name: 'media-tags', params: { id } })
 }
 
 onMounted(loadFavorites)
@@ -64,16 +64,17 @@ watch(() => favorites.count, loadFavorites)
   <section class="section">
     <div class="container">
       <h1 class="title">
-        <span class="icon mr-2"><i class="fa-solid fa-heart"></i></span>
+        <span class="icon mr-2"><i class="fa-solid fa-heart" /></span>
         Favorites
         <span v-if="!isEmpty" class="tag is-medium is-rounded ml-3">{{ favorites.count }}</span>
       </h1>
 
       <div class="notification is-warning is-light favorites-disclaimer">
-        <span class="icon mr-2"><i class="fa-solid fa-circle-info"></i></span>
+        <span class="icon mr-2"><i class="fa-solid fa-circle-info" /></span>
         <span>
           Favorites are saved in your browser's local storage and are not stored on the server.
-          Clearing your browser data, switching browsers, or using a private/incognito window will reset them.
+          Clearing your browser data, switching browsers, or using a private/incognito window will
+          reset them.
         </span>
       </div>
 
@@ -81,21 +82,21 @@ watch(() => favorites.count, loadFavorites)
 
       <div v-else-if="isEmpty" class="has-text-centered py-6">
         <span class="icon is-large has-text-grey-light">
-          <i class="fa-regular fa-heart fa-3x"></i>
+          <i class="fa-regular fa-heart fa-3x" />
         </span>
         <p class="is-size-5 has-text-grey mt-4">No favorites yet.</p>
         <p class="has-text-grey-light mt-2">
-          Click the <i class="fa-regular fa-heart"></i> on any thumbnail or media page to add it here.
+          Click the <i class="fa-regular fa-heart" /> on any thumbnail or media page to add it here.
         </p>
       </div>
 
       <div v-else-if="loadFailed" class="has-text-centered py-6">
         <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-circle-exclamation fa-3x"></i>
+          <i class="fa-solid fa-circle-exclamation fa-3x" />
         </span>
         <p class="is-size-5 has-text-grey mt-4">Could not load favorites.</p>
         <button class="button is-indigo mt-4" @click="loadFavorites">
-          <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
+          <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
           <span>Retry</span>
         </button>
       </div>

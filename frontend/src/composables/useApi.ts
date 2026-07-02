@@ -18,6 +18,24 @@ export class ApiError extends Error {
 }
 
 /**
+ * Extract a human-readable message from an unknown thrown value. `Error`
+ * (and `ApiError`) carry a `.message`; anything else falls back to `fallback`.
+ */
+export function getErrorMessage(err: unknown, fallback = 'Something went wrong'): string {
+  return err instanceof Error && err.message ? err.message : fallback
+}
+
+/** The HTTP status of a thrown ApiError, or 0 for any other value. */
+export function getErrorStatus(err: unknown): number {
+  return err instanceof ApiError ? err.status : 0
+}
+
+/** The machine-readable code of a thrown ApiError, or '' for any other value. */
+export function getErrorCode(err: unknown): string {
+  return err instanceof ApiError ? err.code : ''
+}
+
+/**
  * Parse a failed API response into an ApiError.
  * Attempts to read the JSON body for a human-readable `message` field;
  * falls back to a generic description based on the HTTP status code.
@@ -36,13 +54,26 @@ async function parseApiError(response: Response, _url: string): Promise<ApiError
 
   if (!message) {
     switch (response.status) {
-      case 400: message = 'The request was invalid.'; break
-      case 401: message = 'Authentication is required. Please log in.'; break
-      case 403: message = 'You do not have permission to perform this action.'; break
-      case 404: message = 'The requested resource was not found.'; break
-      case 429: message = 'Too many requests. Please wait a moment and try again.'; break
-      case 500: message = 'An internal server error occurred.'; break
-      default:  message = `Request failed (HTTP ${response.status}).`
+      case 400:
+        message = 'The request was invalid.'
+        break
+      case 401:
+        message = 'Authentication is required. Please log in.'
+        break
+      case 403:
+        message = 'You do not have permission to perform this action.'
+        break
+      case 404:
+        message = 'The requested resource was not found.'
+        break
+      case 429:
+        message = 'Too many requests. Please wait a moment and try again.'
+        break
+      case 500:
+        message = 'An internal server error occurred.'
+        break
+      default:
+        message = `Request failed (HTTP ${response.status}).`
     }
   }
 
@@ -110,7 +141,7 @@ export function useApi() {
     return request<T>(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
     })
   }
 
@@ -118,7 +149,7 @@ export function useApi() {
     return request<T>(url, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
     })
   }
 
@@ -126,7 +157,7 @@ export function useApi() {
     return request<T>(url, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
     })
   }
 
@@ -134,7 +165,7 @@ export function useApi() {
     return request<T>(url, {
       method: 'DELETE',
       headers: { 'Content-Type': 'application/json' },
-      body: body ? JSON.stringify(body) : undefined
+      body: body ? JSON.stringify(body) : undefined,
     })
   }
 
@@ -148,7 +179,7 @@ export function useApi() {
     const response = await fetch(`${API_BASE_URL}${url}`, {
       method: 'POST',
       headers,
-      body: formData
+      body: formData,
     })
 
     if (!response.ok) {

@@ -1,5 +1,5 @@
 import { ref } from 'vue'
-import { useApi } from './useApi'
+import { useApi, getErrorMessage } from './useApi'
 import { useToastStore } from '../stores/toast'
 import { useGalleryStore } from '../stores/gallery'
 import { endpoints } from '../api/endpoints'
@@ -21,12 +21,12 @@ export function useMediaTags() {
     try {
       const [item, itemTags] = await Promise.all([
         api.get<MediaItem>(endpoints.media.byId(mediaId)),
-        api.get<Tag[]>(endpoints.media.tags(mediaId))
+        api.get<Tag[]>(endpoints.media.tags(mediaId)),
       ])
       mediaItem.value = item
       tags.value = itemTags ?? []
-    } catch (e: any) {
-      toastStore.error(e.message || 'Failed to load media')
+    } catch (e) {
+      toastStore.error(getErrorMessage(e, 'Failed to load media'))
       loadFailed.value = true
     } finally {
       loading.value = false
@@ -38,8 +38,8 @@ export function useMediaTags() {
       const updatedTags = await api.patch<Tag[]>(endpoints.media.tags(mediaId), { tag_ids: tagIds })
       tags.value = updatedTags ?? []
       await store.refreshTags()
-    } catch (e: any) {
-      toastStore.error(e.message || 'Failed to add tags')
+    } catch (e) {
+      toastStore.error(getErrorMessage(e, 'Failed to add tags'))
     }
   }
 
@@ -47,8 +47,8 @@ export function useMediaTags() {
     try {
       const updatedTags = await api.del<Tag[]>(endpoints.media.removeTag(mediaId, tagId))
       tags.value = updatedTags ?? []
-    } catch (e: any) {
-      toastStore.error(e.message || 'Failed to remove tag')
+    } catch (e) {
+      toastStore.error(getErrorMessage(e, 'Failed to remove tag'))
     }
   }
 

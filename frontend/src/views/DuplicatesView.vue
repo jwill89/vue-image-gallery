@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import { ref, onMounted, computed } from 'vue'
-import { useApi, hasAuthToken, setAuthToken } from '../composables/useApi'
+import {
+  useApi,
+  getErrorMessage,
+  getErrorStatus,
+  hasAuthToken,
+  setAuthToken,
+} from '../composables/useApi'
 import { useGalleryStore } from '../stores/gallery'
 import { useToastStore } from '../stores/toast'
 import { endpoints } from '../api/endpoints'
@@ -32,12 +38,14 @@ async function login() {
   authLoading.value = true
   authError.value = null
   try {
-    const result = await api.post<LoginResponse>(endpoints.auth.login, { password: passwordInput.value })
+    const result = await api.post<LoginResponse>(endpoints.auth.login, {
+      password: passwordInput.value,
+    })
     setAuthToken(result.token)
     authenticated.value = true
     passwordInput.value = ''
     await loadReport()
-  } catch (e: any) {
+  } catch {
     authError.value = 'Invalid password'
   } finally {
     authLoading.value = false
@@ -50,8 +58,8 @@ async function loadReport() {
 
   try {
     report.value = await api.get<DuplicateReport>(endpoints.duplicates.report)
-  } catch (e: any) {
-    const status = e?.status ?? 0
+  } catch (e) {
+    const status = getErrorStatus(e)
     if (status === 401) {
       authenticated.value = false
       return
@@ -59,7 +67,11 @@ async function loadReport() {
     if (status === 404) {
       report.value = null
     } else {
-      toastStore.error(e.message || 'Failed to load the duplicates report.', 6000, 'Load Failed')
+      toastStore.error(
+        getErrorMessage(e, 'Failed to load the duplicates report.'),
+        6000,
+        'Load Failed',
+      )
       loadFailed.value = true
       report.value = null
     }
@@ -76,8 +88,8 @@ async function runScan() {
     toastStore.success('The duplicate scan is complete. Loading results...', 4000, 'Scan Complete')
     selectedMedia.value.clear()
     await loadReport()
-  } catch (e: any) {
-    toastStore.error(e.message || 'The duplicate scan failed.', 6000, 'Scan Failed')
+  } catch (e) {
+    toastStore.error(getErrorMessage(e, 'The duplicate scan failed.'), 6000, 'Scan Failed')
   } finally {
     scanning.value = false
   }
@@ -85,7 +97,12 @@ async function runScan() {
 
 async function deleteSelected() {
   if (!hasSelection.value) return
-  if (!confirm(`Are you sure you want to delete ${selectionCount.value} media item(s) from the database?`)) return
+  if (
+    !confirm(
+      `Are you sure you want to delete ${selectionCount.value} media item(s) from the database?`,
+    )
+  )
+    return
 
   deleting.value = true
 
@@ -100,8 +117,12 @@ async function deleteSelected() {
     selectedMedia.value.clear()
     await loadReport()
     await store.refreshTotals()
-  } catch (e: any) {
-    toastStore.error(e.message || 'Failed to delete the selected media.', 6000, 'Delete Failed')
+  } catch (e) {
+    toastStore.error(
+      getErrorMessage(e, 'Failed to delete the selected media.'),
+      6000,
+      'Delete Failed',
+    )
   } finally {
     deleting.value = false
   }
@@ -120,13 +141,17 @@ async function dismissPair(match: DuplicateMatch) {
 
     // Remove from the local report immediately
     if (report.value) {
-      report.value.matches = report.value.matches.filter(m =>
-        !(m.media_1.media_id === match.media_1.media_id && m.media_2.media_id === match.media_2.media_id)
+      report.value.matches = report.value.matches.filter(
+        (m) =>
+          !(
+            m.media_1.media_id === match.media_1.media_id &&
+            m.media_2.media_id === match.media_2.media_id
+          ),
       )
       report.value.duplicates_found = report.value.matches.length
     }
-  } catch (e: any) {
-    toastStore.error(e.message || 'Could not dismiss this pair.', 6000, 'Dismiss Failed')
+  } catch (e) {
+    toastStore.error(getErrorMessage(e, 'Could not dismiss this pair.'), 6000, 'Dismiss Failed')
   } finally {
     dismissing.value = null
   }
@@ -179,7 +204,7 @@ function ssimClass(ssim: number | null): string {
 
 onMounted(() => {
   if (authenticated.value) {
-    loadReport()
+    void loadReport()
   }
 })
 </script>
@@ -193,23 +218,27 @@ onMounted(() => {
           <div class="column is-4">
             <div class="box">
               <h2 class="title is-4 has-text-centered">
-                <span class="icon"><i class="fa-solid fa-lock"></i></span>
+                <span class="icon"><i class="fa-solid fa-lock" /></span>
                 Authentication Required
               </h2>
-              <p class="has-text-centered mb-4">Enter the admin password to access the duplicates page.</p>
+              <p class="has-text-centered mb-4">
+                Enter the admin password to access the duplicates page.
+              </p>
               <div class="field">
                 <div class="control has-icons-left">
                   <input
+                    v-model="passwordInput"
                     class="input"
                     :class="{ 'is-danger': authError }"
                     type="password"
                     placeholder="Password"
-                    v-model="passwordInput"
                     @keyup.enter="login"
                   />
-                  <span class="icon is-left"><i class="fa-solid fa-key"></i></span>
+                  <span class="icon is-left"><i class="fa-solid fa-key" /></span>
                 </div>
-                <p v-if="authError" class="help is-danger">{{ authError }}</p>
+                <p v-if="authError" class="help is-danger">
+                  {{ authError }}
+                </p>
               </div>
               <button
                 class="button is-primary is-fullwidth"
@@ -235,14 +264,24 @@ onMounted(() => {
           </div>
           <div class="level-right">
             <div class="level-item">
-              <button class="button is-info" :class="{ 'is-loading': scanning }" :disabled="scanning" @click="runScan">
-                <span class="icon"><i class="fa-solid fa-magnifying-glass"></i></span>
+              <button
+                class="button is-info"
+                :class="{ 'is-loading': scanning }"
+                :disabled="scanning"
+                @click="runScan"
+              >
+                <span class="icon"><i class="fa-solid fa-magnifying-glass" /></span>
                 <span>Run New Scan</span>
               </button>
             </div>
-            <div class="level-item" v-if="hasSelection">
-              <button class="button is-danger" :class="{ 'is-loading': deleting }" :disabled="deleting" @click="deleteSelected">
-                <span class="icon"><i class="fa-solid fa-trash"></i></span>
+            <div v-if="hasSelection" class="level-item">
+              <button
+                class="button is-danger"
+                :class="{ 'is-loading': deleting }"
+                :disabled="deleting"
+                @click="deleteSelected"
+              >
+                <span class="icon"><i class="fa-solid fa-trash" /></span>
                 <span>Delete Selected ({{ selectionCount }})</span>
               </button>
             </div>
@@ -255,11 +294,11 @@ onMounted(() => {
         <!-- Load Failed -->
         <div v-else-if="loadFailed" class="has-text-centered py-6">
           <span class="icon is-large has-text-grey-light">
-            <i class="fa-solid fa-triangle-exclamation fa-3x"></i>
+            <i class="fa-solid fa-triangle-exclamation fa-3x" />
           </span>
           <p class="is-size-5 has-text-grey mt-4">Could not load the duplicates report.</p>
           <button class="button is-indigo mt-4" @click="loadReport">
-            <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
+            <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
             <span>Retry</span>
           </button>
         </div>
@@ -267,9 +306,11 @@ onMounted(() => {
         <!-- No Report -->
         <div v-else-if="!report" class="has-text-centered py-6">
           <span class="icon is-large has-text-grey-light">
-            <i class="fa-solid fa-magnifying-glass fa-3x"></i>
+            <i class="fa-solid fa-magnifying-glass fa-3x" />
           </span>
-          <p class="is-size-5 has-text-grey mt-4">No duplicate report found. Run a scan to generate one.</p>
+          <p class="is-size-5 has-text-grey mt-4">
+            No duplicate report found. Run a scan to generate one.
+          </p>
         </div>
 
         <!-- Report Content -->
@@ -279,37 +320,45 @@ onMounted(() => {
             <div class="columns">
               <div class="column has-text-centered">
                 <p class="heading">Report File</p>
-                <p class="title is-6">{{ report.report_file }}</p>
+                <p class="title is-6">
+                  {{ report.report_file }}
+                </p>
               </div>
               <div class="column has-text-centered">
                 <p class="heading">Generated</p>
-                <p class="title is-6">{{ report.generated_at || 'Unknown' }}</p>
+                <p class="title is-6">
+                  {{ report.generated_at || 'Unknown' }}
+                </p>
               </div>
               <div class="column has-text-centered">
                 <p class="heading">Images Compared</p>
-                <p class="title is-6">{{ report.images_compared?.toLocaleString() || '—' }}</p>
+                <p class="title is-6">
+                  {{ report.images_compared?.toLocaleString() || '—' }}
+                </p>
               </div>
               <div class="column has-text-centered">
                 <p class="heading">Duplicates Found</p>
-                <p class="title is-6">{{ report.duplicates_found }}</p>
+                <p class="title is-6">
+                  {{ report.duplicates_found }}
+                </p>
               </div>
             </div>
           </div>
 
           <!-- Selection Controls -->
-          <div class="buttons mb-4" v-if="report.matches.length > 0">
+          <div v-if="report.matches.length > 0" class="buttons mb-4">
             <button class="button is-small is-warning" @click="selectAll">
-              <span class="icon"><i class="fa-solid fa-check-double"></i></span>
+              <span class="icon"><i class="fa-solid fa-check-double" /></span>
               <span>Select All Duplicates (Right Column)</span>
             </button>
-            <button class="button is-small" @click="clearSelection" v-if="hasSelection">
-              <span class="icon"><i class="fa-solid fa-xmark"></i></span>
+            <button v-if="hasSelection" class="button is-small" @click="clearSelection">
+              <span class="icon"><i class="fa-solid fa-xmark" /></span>
               <span>Clear Selection</span>
             </button>
           </div>
 
           <!-- No duplicates -->
-          <div class="notification is-info is-light" v-if="report.matches.length === 0">
+          <div v-if="report.matches.length === 0" class="notification is-info is-light">
             No duplicate pairs found in the latest report.
           </div>
 
@@ -319,8 +368,13 @@ onMounted(() => {
             <div class="columns">
               <!-- Image 1 -->
               <div class="column is-6">
-                <div class="card" :class="{ 'has-background-danger-light': isSelected(match.media_1.media_id) }">
-                  <div class="card-content has-text-centered has-background-grey-darker dupe-image-container">
+                <div
+                  class="card"
+                  :class="{ 'has-background-danger-light': isSelected(match.media_1.media_id) }"
+                >
+                  <div
+                    class="card-content has-text-centered has-background-grey-darker dupe-image-container"
+                  >
                     <a :href="fullUrl(match.media_1.file_name)" target="_blank">
                       <img
                         :src="fullUrl(match.media_1.file_name)"
@@ -333,16 +387,25 @@ onMounted(() => {
                   <footer class="card-footer">
                     <div class="card-footer-item">
                       <label class="checkbox">
-                        <input type="checkbox" :checked="isSelected(match.media_1.media_id)"
-                          @change="toggleSelect(match.media_1.media_id)" />
+                        <input
+                          type="checkbox"
+                          :checked="isSelected(match.media_1.media_id)"
+                          @change="toggleSelect(match.media_1.media_id)"
+                        />
                         &nbsp;Select
                       </label>
                     </div>
                     <div class="card-footer-item">
                       <span class="is-size-7">ID: {{ match.media_1.media_id }}</span>
                     </div>
-                    <a class="card-footer-item" :href="fullUrl(match.media_1.file_name)" target="_blank">
-                      <span class="icon has-text-info-dark"><i class="fa-solid fa-up-right-from-square"></i></span>
+                    <a
+                      class="card-footer-item"
+                      :href="fullUrl(match.media_1.file_name)"
+                      target="_blank"
+                    >
+                      <span class="icon has-text-info-dark"
+                        ><i class="fa-solid fa-up-right-from-square"
+                      /></span>
                     </a>
                   </footer>
                 </div>
@@ -350,8 +413,13 @@ onMounted(() => {
 
               <!-- Image 2 -->
               <div class="column is-6">
-                <div class="card" :class="{ 'has-background-danger-light': isSelected(match.media_2.media_id) }">
-                  <div class="card-content has-text-centered has-background-grey-darker dupe-image-container">
+                <div
+                  class="card"
+                  :class="{ 'has-background-danger-light': isSelected(match.media_2.media_id) }"
+                >
+                  <div
+                    class="card-content has-text-centered has-background-grey-darker dupe-image-container"
+                  >
                     <a :href="fullUrl(match.media_2.file_name)" target="_blank">
                       <img
                         :src="fullUrl(match.media_2.file_name)"
@@ -364,16 +432,25 @@ onMounted(() => {
                   <footer class="card-footer">
                     <div class="card-footer-item">
                       <label class="checkbox">
-                        <input type="checkbox" :checked="isSelected(match.media_2.media_id)"
-                          @change="toggleSelect(match.media_2.media_id)" />
+                        <input
+                          type="checkbox"
+                          :checked="isSelected(match.media_2.media_id)"
+                          @change="toggleSelect(match.media_2.media_id)"
+                        />
                         &nbsp;Select
                       </label>
                     </div>
                     <div class="card-footer-item">
                       <span class="is-size-7">ID: {{ match.media_2.media_id }}</span>
                     </div>
-                    <a class="card-footer-item" :href="fullUrl(match.media_2.file_name)" target="_blank">
-                      <span class="icon has-text-info-dark"><i class="fa-solid fa-up-right-from-square"></i></span>
+                    <a
+                      class="card-footer-item"
+                      :href="fullUrl(match.media_2.file_name)"
+                      target="_blank"
+                    >
+                      <span class="icon has-text-info-dark"
+                        ><i class="fa-solid fa-up-right-from-square"
+                      /></span>
                     </a>
                   </footer>
                 </div>
@@ -383,13 +460,13 @@ onMounted(() => {
             <!-- Action bar: stats + dismiss -->
             <div class="level mt-3">
               <div class="level-left">
-                <div class="level-item" v-if="match.distance !== null">
+                <div v-if="match.distance !== null" class="level-item">
                   <span class="tag is-medium is-dark">
-                    <span class="icon mr-1"><i class="fa-solid fa-arrows-left-right"></i></span>
+                    <span class="icon mr-1"><i class="fa-solid fa-arrows-left-right" /></span>
                     Distance: {{ match.distance }}
                   </span>
                 </div>
-                <div class="level-item" v-if="match.ssim !== null">
+                <div v-if="match.ssim !== null" class="level-item">
                   <span class="tag is-medium" :class="ssimClass(match.ssim)">
                     SSIM: {{ ssimLabel(match.ssim) }}
                   </span>
@@ -399,12 +476,15 @@ onMounted(() => {
                 <div class="level-item">
                   <button
                     class="button is-amber is-outlined"
-                    :class="{ 'is-loading': dismissing === `${match.media_1.media_id}:${match.media_2.media_id}` }"
+                    :class="{
+                      'is-loading':
+                        dismissing === `${match.media_1.media_id}:${match.media_2.media_id}`,
+                    }"
                     :disabled="dismissing !== null"
-                    @click="dismissPair(match)"
                     title="Mark as not a duplicate — hides this pair from future reports"
+                    @click="dismissPair(match)"
                   >
-                    <span class="icon"><i class="fa-solid fa-eye-slash"></i></span>
+                    <span class="icon"><i class="fa-solid fa-eye-slash" /></span>
                     <span>Not a Duplicate</span>
                   </button>
                 </div>

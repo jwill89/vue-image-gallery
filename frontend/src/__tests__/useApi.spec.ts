@@ -55,7 +55,9 @@ describe('useApi', () => {
       ok: true,
       status: 204,
       text: async () => '',
-      json: async () => { throw new Error('no body') },
+      json: async () => {
+        throw new Error('no body')
+      },
     })
     vi.stubGlobal('fetch', fetchMock)
 

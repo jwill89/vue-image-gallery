@@ -13,7 +13,7 @@ interface Crumb {
 const MAX_VISIBLE_TAGS = 3
 
 function formatTagLabel(tagsParam: string): { label: string; title?: string } {
-  const tagList = tagsParam.split(',').map(t => t.trim())
+  const tagList = tagsParam.split(',').map((t) => t.trim())
   if (tagList.length <= MAX_VISIBLE_TAGS) {
     return { label: tagList.join(', ') }
   }
@@ -21,7 +21,7 @@ function formatTagLabel(tagsParam: string): { label: string; title?: string } {
   const remaining = tagList.length - MAX_VISIBLE_TAGS
   return {
     label: `${visible} + ${remaining} more`,
-    title: tagList.join(', ')
+    title: tagList.join(', '),
   }
 }
 
@@ -33,14 +33,16 @@ const crumbs = computed<Crumb[]>(() => {
   const name = route.name as string
   if (!name) return []
 
-  const list: Crumb[] = [
-    { label: 'Gallery', icon: 'fa-solid fa-house' }
-  ]
+  const list: Crumb[] = [{ label: 'Gallery', icon: 'fa-solid fa-house' }]
 
   if (name === 'media') {
     list.push({ label: 'Media', icon: 'fa-solid fa-images' })
   } else if (name === 'media-with-tags') {
-    list.push({ label: 'Media', icon: 'fa-solid fa-images', to: { name: 'media', params: { page: 1, perPage: String(route.params.perPage || 40) } } })
+    list.push({
+      label: 'Media',
+      icon: 'fa-solid fa-images',
+      to: { name: 'media', params: { page: 1, perPage: String(route.params.perPage || 40) } },
+    })
     if (route.params.tags === 'untagged') {
       list.push({ label: 'Untagged', icon: 'fa-solid fa-ban' })
     } else {
@@ -48,8 +50,12 @@ const crumbs = computed<Crumb[]>(() => {
       list.push({ label, title, icon: 'fa-solid fa-filter' })
     }
   } else if (name === 'media-tags') {
-    list.push({ label: 'Media', icon: 'fa-solid fa-images', to: { name: 'media', params: { page: 1, perPage: 40 } } })
-    list.push({ label: `Media #${route.params.id}`, icon: 'fa-solid fa-circle-info' })
+    list.push({
+      label: 'Media',
+      icon: 'fa-solid fa-images',
+      to: { name: 'media', params: { page: 1, perPage: 40 } },
+    })
+    list.push({ label: `Media #${String(route.params.id)}`, icon: 'fa-solid fa-circle-info' })
   } else if (name === 'tags') {
     list.push({ label: 'Tags', icon: 'fa-solid fa-tags' })
   } else if (name === 'tag-categories') {
@@ -61,7 +67,7 @@ const crumbs = computed<Crumb[]>(() => {
   } else if (name === 'tag-implications') {
     list.push({ label: 'Tags', icon: 'fa-solid fa-tags', to: { name: 'tags' } })
     const tagId = Number(route.params.tagId)
-    const tag = store.allTags.find(t => t.tag_id === tagId)
+    const tag = store.allTags.find((t) => t.tag_id === tagId)
     list.push({ label: tag?.tag_name ?? `Tag #${tagId}`, icon: 'fa-solid fa-link' })
   } else if (name === 'favorites') {
     list.push({ label: 'Favorites', icon: 'fa-solid fa-heart' })
@@ -77,7 +83,7 @@ const crumbs = computed<Crumb[]>(() => {
 })
 
 function navigate(crumb: Crumb) {
-  if (crumb.to) router.push(crumb.to)
+  if (crumb.to) void router.push(crumb.to)
 }
 </script>
 
@@ -89,12 +95,16 @@ function navigate(crumb: Crumb) {
         :key="idx"
         :class="{ 'is-active': idx === crumbs.length - 1 }"
       >
-        <a v-if="crumb.to && idx < crumbs.length - 1" @click.prevent="navigate(crumb)" :title="crumb.title">
-          <span class="icon is-small"><i :class="crumb.icon"></i></span>
+        <a
+          v-if="crumb.to && idx < crumbs.length - 1"
+          :title="crumb.title"
+          @click.prevent="navigate(crumb)"
+        >
+          <span class="icon is-small"><i :class="crumb.icon" /></span>
           <span>{{ crumb.label }}</span>
         </a>
         <a v-else aria-current="page" :title="crumb.title">
-          <span class="icon is-small"><i :class="crumb.icon"></i></span>
+          <span class="icon is-small"><i :class="crumb.icon" /></span>
           <span>{{ crumb.label }}</span>
         </a>
       </li>

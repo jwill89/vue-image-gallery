@@ -2,11 +2,15 @@
 import { ref, onErrorCaptured } from 'vue'
 import { useToastStore } from '../stores/toast'
 
-const props = withDefaults(defineProps<{
-  fallbackMessage?: string
-}>(), {
-  fallbackMessage: 'Something went wrong. Please try refreshing the page.'
-})
+// props are consumed directly in the template (fallbackMessage); no script binding needed.
+withDefaults(
+  defineProps<{
+    fallbackMessage?: string
+  }>(),
+  {
+    fallbackMessage: 'Something went wrong. Please try refreshing the page.',
+  },
+)
 
 const toastStore = useToastStore()
 const hasError = ref(false)
@@ -29,11 +33,13 @@ function retry() {
     <div class="container">
       <div class="has-text-centered py-6">
         <span class="icon is-large has-text-grey-light">
-          <i class="fa-solid fa-triangle-exclamation fa-3x"></i>
+          <i class="fa-solid fa-triangle-exclamation fa-3x" />
         </span>
-        <p class="is-size-5 has-text-grey mt-4">{{ fallbackMessage }}</p>
+        <p class="is-size-5 has-text-grey mt-4">
+          {{ fallbackMessage }}
+        </p>
         <button class="button is-indigo mt-4" @click="retry">
-          <span class="icon"><i class="fa-solid fa-rotate-right"></i></span>
+          <span class="icon"><i class="fa-solid fa-rotate-right" /></span>
           <span>Try Again</span>
         </button>
       </div>
